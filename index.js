@@ -547,7 +547,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/2022.3.2f1 (UnityWebRequest/1.0, libcurl/7.84.0-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -648,7 +648,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/2022.3.2f1 (UnityWebRequest/1.0, libcurl/7.84.0-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -696,7 +696,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/2022.3.2f1 (UnityWebRequest/1.0, libcurl/7.84.0-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -1359,7 +1359,7 @@ const server = http.createServer((req, res) => {
                 return;
             }
 
-            if (req.headers['user-agent'] != 'UnityPlayer/2022.3.2f1 (UnityWebRequest/1.0, libcurl/7.84.0-DEV)') {
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
                 bannedIps[clientIp] = Date.now();
                 console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
             }
@@ -1479,7 +1479,7 @@ const server = http.createServer((req, res) => {
                 return;
             }
 
-            if (req.headers['user-agent'] != 'UnityPlayer/2022.3.2f1 (UnityWebRequest/1.0, libcurl/7.84.0-DEV)') {
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
                 bannedIps[clientIp] = Date.now();
                 console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
             }
