@@ -7,40 +7,45 @@ const { exec } = require('child_process');
 
 let bannedIds = [];
 let DISCORD_WEBHOOK_URL = '';
-const path = '/home/iidk/site/webhook.txt';
-if (fs.existsSync(path)) {
-    DISCORD_WEBHOOK_URL = fs.readFileSync(path, 'utf8').trim();
+if (fs.existsSync('/home/iidk/site/webhook.txt')) {
+    DISCORD_WEBHOOK_URL = fs.readFileSync('/home/iidk/site/webhook.txt', 'utf8').trim();
     console.log('Set webhook');
 } else {
     console.log('Webhook file does not exist.');
 }
 
 let SYNCDATA_WEBHOOK_URL = '';
-const datapath = '/home/iidk/site/syncwebhook.txt';
-if (fs.existsSync(datapath)) {
-    SYNCDATA_WEBHOOK_URL = fs.readFileSync(datapath, 'utf8').trim();
+if (fs.existsSync('/home/iidk/site/syncwebhook.txt')) {
+    SYNCDATA_WEBHOOK_URL = fs.readFileSync('/home/iidk/site/syncwebhook.txt', 'utf8').trim();
     console.log('Set syncwebhook');
 } else {
     console.log('Syncwebhook file does not exist.');
 }
 
 let BANDATA_WEBHOOK_URL = '';
-const banpath = '/home/iidk/site/banwebhook.txt';
-if (fs.existsSync(banpath)) {
-    BANDATA_WEBHOOK_URL = fs.readFileSync(banpath, 'utf8').trim();
+if (fs.existsSync('/home/iidk/site/banwebhook.txt')) {
+    BANDATA_WEBHOOK_URL = fs.readFileSync('/home/iidk/site/banwebhook.txt', 'utf8').trim();
     console.log('Set syncwebhook');
 } else {
     console.log('Banwebhook file does not exist.');
 }
 
-let secret = '';
-const secretpath = '/home/iidk/site/secret.txt';
-if (fs.existsSync(secretpath)) {
-    secret = fs.readFileSync(secretpath, 'utf8').trim();
+let SECRET_KEY = '';
+if (fs.existsSync('/home/iidk/site/secret.txt')) {
+    secret = fs.readFileSync('/home/iidk/site/secret.txt', 'utf8').trim();
     console.log('Set secret');
 } else {
     console.log('Secret file does not exist.');
 }
+
+let serverData = '{"error":"No data"}';
+function updateServerData() {
+    if (fs.existsSync('/home/iidk/site/serverdata.json')) {
+        serverData = fs.readFileSync('/home/iidk/site/serverdata.json', 'utf8').trim();
+        console.log('Loaded serverdata');
+    }
+}
+updateServerData();
 
 let playerIdMap = {};
 
@@ -856,7 +861,11 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
-    } else if (req.method === 'GET' && req.url === '/gettelemdata') {
+    } else if (req.method === 'GET' && req.url === '/serverdata'){
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(serverData);
+    } 
+    else if (req.method === 'GET' && req.url === '/gettelemdata') {
         let body = '';
 
         req.on('data', chunk => {
