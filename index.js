@@ -1,7 +1,7 @@
 // iidk.online
 // Server for ii's Stupid Menu and related projects
 
-// I wrote the script originally but rage quitted on how it was set up and had deepseek rewrite the entire thing
+// I wrote the script originally but rage quit on how it was set up and had deepseek rewrite the entire thing
 
 const http = require('http');
 const https = require('https');
