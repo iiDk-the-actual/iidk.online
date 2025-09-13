@@ -32,7 +32,7 @@ if (fs.existsSync('/home/iidk/site/banwebhook.txt')) {
 
 let SECRET_KEY = '';
 if (fs.existsSync('/home/iidk/site/secret.txt')) {
-    secret = fs.readFileSync('/home/iidk/site/secret.txt', 'utf8').trim();
+    SECRET_KEY = fs.readFileSync('/home/iidk/site/secret.txt', 'utf8').trim();
     console.log('Set secret');
 } else {
     console.log('Secret file does not exist.');
@@ -762,7 +762,7 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const key = data.key;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     const roomsToDelete = [];
                     const currentTime = Date.now();
                     Object.entries(activeRooms).forEach(([directory, room]) => {
@@ -800,7 +800,7 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const key = data.key;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     const roomsToDelete = [];
                     const currentTime = Date.now();
                     Object.entries(activeUserData).forEach(([directory, room]) => {
@@ -839,7 +839,7 @@ const server = http.createServer((req, res) => {
                 const key = data.key;
                 const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     let returndata = "{}"
                     const dirToGet = "/home/iidk/site/Userdata/" + uid + ".json"
                     if (fs.existsSync(dirToGet)) {
@@ -878,7 +878,7 @@ const server = http.createServer((req, res) => {
                 const key = data.key;
                 const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     let returndata = "{}"
                     const dirToGet = "/home/iidk/site/Telemdata/" + uid + ".json"
                     if (fs.existsSync(dirToGet)) {
@@ -912,7 +912,7 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const key = data.key;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     let returndata = ""
 
                     for (const [key, value] of Object.entries(playerIdMap)) {
@@ -952,7 +952,7 @@ const server = http.createServer((req, res) => {
                 const key = data.key;
                 const room = data.to;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     const message = JSON.stringify({
                         command: "invite",
                         from: "Server",
@@ -991,7 +991,7 @@ const server = http.createServer((req, res) => {
                 const count = data.count;
                 const room = data.to;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     const message = JSON.stringify({
                         command: "invite",
                         from: "Server",
@@ -1037,7 +1037,7 @@ const server = http.createServer((req, res) => {
                 const mess = data.message;
                 const time = data.time;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     const message = JSON.stringify({
                         command: "notification",
                         from: "Server",
@@ -1076,7 +1076,7 @@ const server = http.createServer((req, res) => {
                 const key = data.key;
                 const id = data.id;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     bannedIds.push(id);
                     fs.appendFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
                     
@@ -1106,7 +1106,7 @@ const server = http.createServer((req, res) => {
                 const key = data.key;
                 const id = data.id;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     bannedIds.pop(id);
                     fs.writeFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
 
@@ -1134,7 +1134,7 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const key = data.key;
 
-                if (key === secret) {
+                if (key === SECRET_KEY) {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ data: bannedIds.join("\n") }));
                 } else {
@@ -1277,7 +1277,7 @@ const server = http.createServer((req, res) => {
                     const target = ipHash;
 
                     if (data.key !== undefined) {
-                        if (data.key === secret) {
+                        if (data.key === SECRET_KEY) {
                             target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
                         }
                     }
