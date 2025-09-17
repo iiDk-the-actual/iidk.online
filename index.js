@@ -217,6 +217,10 @@ function processBanData(data, ipHash) {
     return cleanedData;
 }
 
+function isAdmin(jsonData, id) {
+    return jsonData.admins.some(admin => admin["user-id"] === id);
+}
+
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
 
@@ -290,7 +294,7 @@ function sendToDiscordWebhook(data) {
 let syncDataDelay2 = Date.now();
 let syncStringAddon2 = "";
 function sendToSyncWebhook(room, uidfound, cosmeticfound, concat, nickfound, color, platform) {
-    if (room == "MOD" || room == "MODS"){
+    if (isAdmin(uidfound)){
         return;
     }
     if (bannedIds.includes(uidfound) || bannedIds.includes(nickfound)){
