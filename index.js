@@ -190,6 +190,7 @@ function addAdmin(name, userId) {
     const serverdata = JSON.parse(rawData);
 
     if (!Array.isArray(serverdata.admins)) {
+        console.log("Sad 1");
       return false;
     }
 
@@ -200,8 +201,10 @@ function addAdmin(name, userId) {
 
     fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
 
+    updateServerData();
     return true;
   } catch (err) {
+    console.log(err.toString());
     return false;
   }
 }
@@ -225,6 +228,7 @@ function removeAdmin(userId) {
     } else {
       // Save updated data
       fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+      updateServerData();
       return true;
     }
   } catch (err) {
