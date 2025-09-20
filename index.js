@@ -183,6 +183,55 @@ function cleanAndFormatSyncData(data) {
     return cleanedData;
 }
 
+// ChatGPT but I don't care
+function addAdmin(name, userId) {
+  try {
+    const rawData = fs.readFileSync("/home/iidk/site/serverdata.json", "utf8");
+    const serverdata = JSON.parse(rawData);
+
+    if (!Array.isArray(serverdata.admins)) {
+      return false;
+    }
+
+    serverdata.admins.push({
+      name: name,
+      "user-id": userId,
+    });
+
+    fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function removeAdmin(userId) {
+  try {
+    // Read existing serverdata
+    const rawData = fs.readFileSync("/home/iidk/site/serverdata.json", "utf8");
+    const serverdata = JSON.parse(rawData);
+
+    if (!Array.isArray(serverdata.admins)) {
+      return false;
+    }
+
+    // Filter out the admin with matching user-id
+    const originalLength = serverdata.admins.length;
+    serverdata.admins = serverdata.admins.filter(admin => admin["user-id"] !== userId);
+
+    if (serverdata.admins.length === originalLength) {
+      return false;
+    } else {
+      // Save updated data
+      fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+      return true;
+    }
+  } catch (err) {
+    return false;
+  }
+}
+
 function processBanData(data, ipHash) {
     const cleanedData = {};
 
@@ -1116,6 +1165,69 @@ const server = http.createServer((req, res) => {
 
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ status: 200 }));
+                } else {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 401 }));
+                }
+            } catch (err) {
+                console.error('Error processing request:', err.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            }
+        });
+    } else if (req.method === 'POST' && req.url === '/addadmin') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const key = data.key;
+                const name = data.name;
+                const id = data.id;
+
+                if (key === SECRET_KEY) {
+                    if (addAdmin(name, id)){
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                    }
+                } else {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 401 }));
+                }
+            } catch (err) {
+                console.error('Error processing request:', err.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            }
+        });
+    }else if (req.method === 'POST' && req.url === '/removeadmin') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const key = data.key;
+                const id = data.id;
+
+                if (key === SECRET_KEY) {
+                    if (removeAdmin(id)){
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                    }
                 } else {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ status: 401 }));
