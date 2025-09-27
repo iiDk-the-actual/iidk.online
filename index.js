@@ -270,8 +270,8 @@ function processBanData(data, ipHash) {
     return cleanedData;
 }
 
-function isAdmin(jsonData, id) {
-    return jsonData.admins.some(admin => admin["user-id"] === id);
+function isAdmin(id) {
+    return serverData.admins.some(admin => admin["user-id"] === id);
 }
 
 function formatTimestamp(timestamp) {
