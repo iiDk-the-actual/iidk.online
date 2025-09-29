@@ -283,17 +283,19 @@ function removeAdmin(userId) {
   }
 }
 
-function setPoll(poll) {
+function setPoll(poll, a, b) {
   try {
     const rawData = fs.readFileSync("/home/iidk/site/serverdata.json", "utf8");
     const serverdata = JSON.parse(rawData);
 
     serverdata.poll = poll;
-    resetVotes();
+    serverdata["option-a"] = a;
+    serverdata["option-b"] = b;
 
     fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
 
     updateServerData();
+    resetVotes();
     return true;
   } catch (err) {
     console.log(err.toString());
@@ -1344,9 +1346,11 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const key = data.key;
                 const poll = data.poll;
+                const a = data.a;
+                const b = data.b;
 
                 if (key === SECRET_KEY) {
-                    if (setPoll(poll)){
+                    if (setPoll(poll, a, b)){
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ status: 200 }));
                     } else {
