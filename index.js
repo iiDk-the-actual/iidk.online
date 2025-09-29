@@ -37,6 +37,53 @@ if (fs.existsSync('/home/iidk/site/secret.txt')) {
 } else {
     console.log('Secret file does not exist.');
 }
+const filePath = '/home/iidk/site/votes.json';
+
+let votes = '{"a-votes":[],"b-votes":[]}';
+if (fs.existsSync(filePath)) {
+    votes = fs.readFileSync(filePath, 'utf8').trim();
+    console.log('Set votes');
+} else {
+    console.log('Votes file does not exist, initializing.');
+}
+
+let votesObj;
+try {
+  votesObj = JSON.parse(votes);
+} catch (e) {
+  console.error('Error parsing votes.json, resetting to defaults.');
+  votesObj = { "a-votes": [], "b-votes": [] };
+}
+
+function incrementVote(option, userId) {
+  if (option !== 'a-votes' && option !== 'b-votes') {
+    throw new Error('Must be "a-votes" or "b-votes"');
+  }
+
+  if (votesObj['a-votes'].includes(userId) || votesObj['b-votes'].includes(userId)) {
+    console.log(`User ${userId} has already voted.`);
+    return false;
+  }
+
+  votesObj[option].push(userId);
+
+  fs.writeFileSync(filePath, JSON.stringify(votesObj, null, 2), 'utf8');
+  console.log(`User ${userId} voted for ${option}`);
+  return true;
+}
+
+function resetVotes() {
+  votesObj = { "a-votes": [], "b-votes": [] };
+  fs.writeFileSync(filePath, JSON.stringify(votesObj, null, 2), 'utf8');
+  console.log('Votes have been reset');
+}
+
+function getVoteCounts() {
+  return JSON.stringify({
+    "a-votes": votesObj["a-votes"].length,
+    "b-votes": votesObj["b-votes"].length
+  });
+}
 
 let serverData = '{"error":"No data"}';
 function updateServerData() {
@@ -232,6 +279,24 @@ function removeAdmin(userId) {
       return true;
     }
   } catch (err) {
+    return false;
+  }
+}
+
+function setPoll(poll) {
+  try {
+    const rawData = fs.readFileSync("/home/iidk/site/serverdata.json", "utf8");
+    const serverdata = JSON.parse(rawData);
+
+    serverdata.poll = poll;
+    resetVotes();
+
+    fs.writeFileSync("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+
+    updateServerData();
+    return true;
+  } catch (err) {
+    console.log(err.toString());
     return false;
   }
 }
@@ -957,6 +1022,31 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
+    } else if (req.method === 'GET' && req.url === '/vote') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const option = data.option;
+
+                if (incrementVote(option, ipHash)){
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(getVoteCounts());
+                } else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: "You have already voted" }));
+                }
+            } catch (err) {
+                console.error('Error processing request:', err.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            }
+        });
     } else if (req.method === 'GET' && req.url === '/playermap') {
         let body = '';
 
@@ -1211,7 +1301,7 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
-    }else if (req.method === 'POST' && req.url === '/removeadmin') {
+    } else if (req.method === 'POST' && req.url === '/removeadmin') {
         let body = '';
 
         req.on('data', chunk => {
@@ -1226,6 +1316,37 @@ const server = http.createServer((req, res) => {
 
                 if (key === SECRET_KEY) {
                     if (removeAdmin(id)){
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                    }
+                } else {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 401 }));
+                }
+            } catch (err) {
+                console.error('Error processing request:', err.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            }
+        });
+    } else if (req.method === 'POST' && req.url === '/setpoll') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const key = data.key;
+                const poll = data.poll;
+
+                if (key === SECRET_KEY) {
+                    if (setPoll(poll)){
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ status: 200 }));
                     } else {
