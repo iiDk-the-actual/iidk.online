@@ -1022,7 +1022,7 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
-    } else if (req.method === 'GET' && req.url === '/vote') {
+    } else if (req.method === 'POST' && req.url === '/vote') {
         let body = '';
 
         req.on('data', chunk => {
