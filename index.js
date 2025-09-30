@@ -1049,6 +1049,9 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
+    } else if (req.method === 'GET' && req.url === '/votes') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(getVoteCounts());
     } else if (req.method === 'GET' && req.url === '/playermap') {
         let body = '';
 
