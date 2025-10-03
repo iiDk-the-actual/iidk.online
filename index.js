@@ -338,8 +338,14 @@ function processBanData(data, ipHash) {
 }
 
 function isAdmin(id) {
-    return serverData.admins.some(admin => admin["user-id"] === id);
+    try {
+        return Array.isArray(serverData?.admins) &&
+           serverData.admins.some(admin => admin["user-id"] === id);
+    } catch {
+        return false;
+    }
 }
+
 
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
