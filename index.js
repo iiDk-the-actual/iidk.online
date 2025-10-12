@@ -37,6 +37,15 @@ if (fs.existsSync('/home/iidk/site/secret.txt')) {
 } else {
     console.log('Secret file does not exist.');
 }
+
+let HASH_KEY = '';
+if (fs.existsSync('/home/iidk/site/hashsecret.txt')) {
+    HASH_KEY = fs.readFileSync('/home/iidk/site/hashsecret.txt', 'utf8').trim();
+    console.log('Set hash');
+} else {
+    console.log('Hash file does not exist.');
+}
+
 const filePath = '/home/iidk/site/votes.json';
 
 let votes = '{"a-votes":[],"b-votes":[]}';
@@ -229,6 +238,17 @@ function cleanAndFormatSyncData(data) {
 
     return cleanedData;
 }
+
+// my system of securing...... fack
+function ipHash(ip, key = HASH_KEY, truncateBits = 0) {
+  const h = crypto.createHmac('sha256', key).update(ip).digest();
+  if (truncateBits && truncateBits < 256) {
+    const bytes = Math.ceil(truncateBits / 8);
+    return h.slice(0, bytes).toString('hex');
+  }
+  return h.toString('hex');
+}
+
 
 // ChatGPT but I don't care
 function addAdmin(name, userId) {
@@ -650,7 +670,7 @@ function getRoomNameByUserId(userId) {
 
 const server = http.createServer((req, res) => {
     const clientIp = req.headers['x-forwarded-for'];
-    const ipHash = crypto.createHash('sha256').update(clientIp).digest('hex');
+    const ipHash = ipHash(clientIp);
 
     const friendDataFileName = "/home/iidk/site/Frienddata/" + ipHash + ".json";
     if (!fs.existsSync(friendDataFileName)) {
@@ -1473,7 +1493,7 @@ const server = http.createServer((req, res) => {
                         return;
                     }
         
-                    const hash = crypto.createHash('sha256').update(text).digest('hex');
+                    const hash = ipHash(text);
                     const cacheDir = "/home/iidk/site/Translatedata/" + lang
                     const cachePath = cacheDir + `/${hash}.txt`;
 
@@ -1640,7 +1660,7 @@ const server = http.createServer((req, res) => {
                     const ipData = JSON.parse(fs.readFileSync("/home/iidk/site/Ipdata/"+clientIp+".json", 'utf8').trim());
                     const telemData = JSON.parse(fs.readFileSync("/home/iidk/site/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
 
-                    const targetHash = crypto.createHash('sha256').update(targetTelemData["ip"]).digest('hex');
+                    const targetHash = ipHash(targetTelemData["ip"]);
                     const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
                     const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
                     
@@ -1803,7 +1823,7 @@ const socketDelay = {};
 let clients = new Map();
 
 function isUserOnline(ip) {
-    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+    const ipHash = ipHash(ip);
     const ws = clients.get(ipHash);
 
     return ws && ws.readyState === WebSocket.OPEN;
@@ -1811,7 +1831,7 @@ function isUserOnline(ip) {
 
 wss.on('connection', (ws, req) => {
     const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
-    const ipHash = crypto.createHash('sha256').update(clientIp).digest('hex');
+    const ipHash = ipHash(clientIp);
 
     clients.set(ipHash, ws);
 
