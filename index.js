@@ -1805,10 +1805,15 @@ const server = http.createServer((req, res) => {
                 }
             });
        }
-       
+       else if (req.method === 'GET' && (req.url === "/" || req.url === ""))
+       {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info."}));
+       }
        else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 404 }));
+       }
     }
 });
 
