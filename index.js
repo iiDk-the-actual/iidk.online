@@ -1816,6 +1816,8 @@ const wss = new WebSocket.Server({ server });
 const socketDelay = {};
 let clients = new Map();
 
+const joinDelay = {};
+
 function isUserOnline(ip) {
     const ipHash = hashIpAddr(ip);
     const ws = clients.get(ipHash);
@@ -1827,8 +1829,14 @@ wss.on('connection', (ws, req) => {
     const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
     const ipHash = hashIpAddr(clientIp);
 
-    clients.set(ipHash, ws);
+    if (joinDelay[clientIp] && Date.now() - joinDelay[clientIp] < 10000){
+        console.log(`Blocked ${ipHash} for mass`);
+        wss.close(1008, "Wait before reconnecting to websocket");
+        return;
+    }
+    joinDelay[clientIp] = Date.now();
 
+    clients.set(ipHash, ws);
     console.log(`Client connected from ${ipHash} (#${clients.size})`);
 
     ws.on('message', message => {
