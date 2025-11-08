@@ -1805,10 +1805,15 @@ const server = http.createServer((req, res) => {
                 }
             });
        }
-       
+       else if (req.method === 'GET' && (req.url === "/" || req.url === ""))
+       {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info."}));
+       }
        else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 404 }));
+       }
     }
 });
 
@@ -1909,6 +1914,28 @@ wss.on('connection', (ws, req) => {
                                     command: "preferences",
                                     from: ipHash,
                                     data: preferences
+                                }));
+                            }
+                        }
+
+                        break;
+                    }
+                case "macro":
+                    {
+                        const macro = data.macro;
+                        const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
+
+                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+
+                        if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
+                            const targetWs = clients.get(targetHash);
+
+                            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                                targetWs.send(JSON.stringify({
+                                    command: "macro",
+                                    from: ipHash,
+                                    data: macro
                                 }));
                             }
                         }
