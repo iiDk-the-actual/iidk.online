@@ -1813,8 +1813,8 @@ const server = http.createServer((req, res) => {
        else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 404 }));
-       }
-    }
+       
+        }
 });
 
 const wss = new WebSocket.Server({ server });
