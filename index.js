@@ -1920,6 +1920,28 @@ wss.on('connection', (ws, req) => {
 
                         break;
                     }
+                case "theme":
+                    {
+                        const theme = data.theme;
+                        const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
+
+                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+
+                        if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
+                            const targetWs = clients.get(targetHash);
+
+                            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                                targetWs.send(JSON.stringify({
+                                    command: "theme",
+                                    from: ipHash,
+                                    data: theme
+                                }));
+                            }
+                        }
+
+                        break;
+                    }
                 case "macro":
                     {
                         const macro = data.macro;
