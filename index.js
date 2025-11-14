@@ -130,7 +130,7 @@ if (fs.existsSync('/home/iidk/site/bannedids.txt')) {
     const fileContent = fs.readFileSync('/home/iidk/site/bannedids.txt', 'utf8').trim();
     bannedIds = fileContent.split('\n');
 
-    console.log('Loaded banend ids');
+    console.log('Loaded banned ids');
 } else {
     console.log('Banned IDs file does not exist.');
 }
