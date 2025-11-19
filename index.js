@@ -1,9 +1,15 @@
+// Fun fact: going through 3.6 million JSON files and putting them in a SQLLite database is not friendly on the SD card you run it on.
+// I moved all important data to a backup. It's failing slowly, I don't feel like getting a new one and no other important data is on it anyways.
+
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const { exec } = require('child_process');
+const sqlite3 = require("sqlite3").verbose();
+
+const db = new sqlite3.Database("/mnt/external/Private/backup/pi/records.db");
 
 let bannedIds = [];
 let DISCORD_WEBHOOK_URL = '';
@@ -562,25 +568,188 @@ function sendToBanWebhook(error, version, data, ipHash) {
     req.end();
 }
 
+// Cache array to store up to 500 records
+const recordCache = [];
+const MAX_CACHE_SIZE = 100;
+
+function writeRecordAutoRaw(id, nickname, room, cosmetics, color = null, platform = null, timestamp = null) {
+    if (!timestamp) timestamp = Date.now();
+
+    // Prepare record object
+    const record = { id, nickname, room, cosmetics, color, platform, timestamp };
+    record.raw_json = JSON.stringify(record);
+
+    // Add to cache
+    recordCache.push(record);
+
+    // If cache reaches MAX_CACHE_SIZE, flush to DB
+    if (recordCache.length >= MAX_CACHE_SIZE) {
+        const cacheToFlush = recordCache.splice(0, recordCache.length); // clear immediately
+        flushCacheToDB(cacheToFlush);
+    }
+}
+
+// Function to flush cache to DB
+function flushCacheToDB(records) {
+    if (!records || records.length === 0) return;
+
+    db.serialize(() => {
+        db.run("BEGIN TRANSACTION");
+        const stmt = db.prepare(`
+            INSERT INTO records
+            (id, nickname, room, cosmetics, color, platform, timestamp, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id, room) DO UPDATE SET
+                nickname = excluded.nickname,
+                cosmetics = excluded.cosmetics,
+                color = excluded.color,
+                platform = excluded.platform,
+                timestamp = excluded.timestamp,
+                raw_json = excluded.raw_json
+        `);
+
+        for (const r of records) {
+            stmt.run([r.id, r.nickname, r.room, r.cosmetics, r.color, r.platform, r.timestamp, r.raw_json]);
+        }
+
+        stmt.finalize();
+        db.run("COMMIT", (err) => {
+            if (err) console.error("SQLite commit error:", err.message);
+            else console.log(`Flushed ${records.length} records to the database.`);
+        });
+    });
+}
+
+// Optional: flush any remaining records before exit
+process.on('exit', flushCacheToDB);
+process.on('SIGINT', () => { flushCacheToDB(); process.exit(); });
+process.on('SIGTERM', () => { flushCacheToDB(); process.exit(); });
+
+const cache = {}; // { [id]: { timestamp: number, data: any } }
+const CACHE_TTL = 60 * 1000; // 60 seconds in milliseconds
+
+function getLatestRecordById(id, callback) {
+    const now = Date.now();
+
+    // Check cache first
+    if (cache[id] && (now - cache[id].timestamp < CACHE_TTL)) {
+        return callback(cache[id].data);
+    }
+
+    // If not cached or expired, query the database
+    const sql = `
+        SELECT raw_json
+        FROM records
+        WHERE id = ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+    `;
+
+    db.get(sql, [id], (err, row) => {
+        if (err) {
+            console.error("SQLite error:", err.message);
+            return callback(null);
+        }
+
+        if (!row) {
+            return callback(null); // no records found
+        }
+
+        try {
+            const parsed = JSON.parse(row.raw_json);
+
+            // Update cache
+            cache[id] = {
+                timestamp: Date.now(),
+                data: parsed
+            };
+
+            callback(parsed);
+        } catch (e) {
+            console.error("Failed to parse raw_json:", e.message);
+            callback(null);
+        }
+    });
+}
+
+function getLatestRecordsByIds(ids, callback) {
+    const now = Date.now();
+    const results = {};
+    const idsToQuery = [];
+
+    // First, check the cache
+    ids.forEach(id => {
+        if (cache[id] && (now - cache[id].timestamp < CACHE_TTL)) {
+            results[id] = cache[id].data;
+        } else {
+            idsToQuery.push(id);
+        }
+    });
+
+    if (idsToQuery.length === 0) {
+        // All data came from cache
+        return callback(results);
+    }
+
+    // Construct placeholders for SQL IN clause
+    const placeholders = idsToQuery.map(() => '?').join(',');
+
+    // SQL to get the latest record per id
+    const sql = `
+        SELECT r1.id, r1.raw_json
+        FROM records r1
+        INNER JOIN (
+            SELECT id, MAX(timestamp) AS max_ts
+            FROM records
+            WHERE id IN (${placeholders})
+            GROUP BY id
+        ) r2
+        ON r1.id = r2.id AND r1.timestamp = r2.max_ts
+    `;
+
+    db.all(sql, idsToQuery, (err, rows) => {
+        if (err) {
+            console.error("SQLite error:", err.message);
+            // Fill queried IDs with null
+            idsToQuery.forEach(id => results[id] = null);
+            return callback(results);
+        }
+
+        // Parse JSON and update cache
+        rows.forEach(row => {
+            try {
+                const parsed = JSON.parse(row.raw_json);
+                results[row.id] = parsed;
+
+                cache[row.id] = {
+                    timestamp: Date.now(),
+                    data: parsed
+                };
+            } catch (e) {
+                console.error("Failed to parse raw_json for id", row.id, e.message);
+                results[row.id] = null;
+            }
+        });
+
+        // Ensure any IDs with no records are set to null
+        idsToQuery.forEach(id => {
+            if (!(id in results)) results[id] = null;
+        });
+
+        callback(results);
+    });
+}
+
+
+// Old, migrated to sqllite
 function writeUserData(userid, nickname, cosmetics, room, color, platform, timestamp) {
-    const filename = `${userid}.json`;
-    const filePath = '/home/iidk/site/Userdata/' + filename;
-
-    const jsonData = {
-        "nickname": nickname,
-        "cosmetics": cosmetics,
-        "room": room,
-        "color": color,
-        "platform": platform,
-        "timestamp": timestamp
-    };
-
-    fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 4), 'utf8');
+    writeRecordAutoRaw(userid, nickname, room, cosmetics, color, platform, timestamp);
 }
 
 function writeBanData(error, version, data, ipHash) {
+    /*
     const filename = `${ipHash}.json`;
-    const filePath = '/home/iidk/site/Bandata/' + filename;
+    const filePath = '/mnt/external/Private/backup/pi/Bandata/' + filename;
 
     const jsonData = {
         "error": error,
@@ -589,11 +758,13 @@ function writeBanData(error, version, data, ipHash) {
     };
 
     fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 4), 'utf8');
+    */
+   // Why are we doing this anyways? What a waste of storage
 }
 
 function writeTelemData(userid, ip, timestamp) {
     const filename = `${userid}.json`;
-    const filePath = '/home/iidk/site/Telemdata/' + filename;
+    const filePath = '/mnt/external/Private/backup/pi/Telemdata/' + filename;
 
     const jsonData = {
         "ip": ip,
@@ -603,7 +774,7 @@ function writeTelemData(userid, ip, timestamp) {
     fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 4), 'utf8');
 
     const filename2 = `${ip}.json`;
-    const filePath2 = '/home/iidk/site/Ipdata/' + filename2;
+    const filePath2 = '/mnt/external/Private/backup/pi/Ipdata/' + filename2;
 
     const jsonData2 = {
         "userid": userid,
@@ -666,7 +837,7 @@ const server = http.createServer((req, res) => {
     const clientIp = req.headers['x-forwarded-for'];
     const ipHash = hashIpAddr(clientIp);
 
-    const friendDataFileName = "/home/iidk/site/Frienddata/" + ipHash + ".json";
+    const friendDataFileName = "/mnt/external/Private/backup/pi/Frienddata/" + ipHash + ".json";
     if (!fs.existsSync(friendDataFileName)) {
         const jsonData = {
             "private-ip": clientIp,
@@ -696,7 +867,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -797,7 +968,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -845,7 +1016,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
             bannedIps[clientIp] = Date.now();
             console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
         }
@@ -874,18 +1045,8 @@ const server = http.createServer((req, res) => {
     } else if (req.method === 'GET' && req.url === '/usercount') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ users: clients.size }));
-    } else if (req.method === 'GET' && req.url === '/databasecount') {
-        const directory = '/home/iidk/site/Userdata';
-        countFilesInDirectory(directory).then((fileCount) => {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ size: fileCount }));
-        }).catch((error) => {
-            console.error('Error processing request:', error.message);
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 400 }));
-        });
     } else if (req.method === 'GET' && req.url === '/telemcount') {
-        const directory = '/home/iidk/site/Telemdata';
+        const directory = '/mnt/external/Private/backup/pi/Telemdata';
         countFilesInDirectory(directory).then((fileCount) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ size: fileCount }));
@@ -984,17 +1145,15 @@ const server = http.createServer((req, res) => {
                 const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
 
                 if (key === SECRET_KEY) {
-                    let returndata = "{}"
-                    const dirToGet = "/home/iidk/site/Userdata/" + uid + ".json"
-                    if (fs.existsSync(dirToGet)) {
-                        const datax = fs.readFileSync(dirToGet, 'utf8');
-                        returndata = datax.trim();
-                    } else {
-                        console.log('UID file does not exist.');
-                    }
+                    getLatestRecordById(uid, (data) => {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
 
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(returndata);
+                        if (!data){
+                            res.end("{}");
+                        } else {
+                            res.end(JSON.stringify(data));
+                        }
+                    });
                 } else {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ status: 401 }));
@@ -1024,7 +1183,7 @@ const server = http.createServer((req, res) => {
 
                 if (key === SECRET_KEY) {
                     let returndata = "{}"
-                    const dirToGet = "/home/iidk/site/Telemdata/" + uid + ".json"
+                    const dirToGet = "/mnt/external/Private/backup/pi/Telemdata/" + uid + ".json"
                     if (fs.existsSync(dirToGet)) {
                         const datax = fs.readFileSync(dirToGet, 'utf8');
                         returndata = datax.trim();
@@ -1072,7 +1231,7 @@ const server = http.createServer((req, res) => {
     } else if (req.method === 'GET' && req.url === '/votes') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(getVoteCounts());
-    } else if (req.method === 'GET' && req.url === '/playermap') {
+    } else if (req.method === 'GET' && req.url === '/playermap') { // Shit
         let body = '';
 
         req.on('data', chunk => {
@@ -1081,30 +1240,41 @@ const server = http.createServer((req, res) => {
 
         req.on('end', () => {
             try {
-                const data = JSON.parse(body);
-                const key = data.key;
+                const incoming = JSON.parse(body);
+                const key = incoming.key;
 
-                if (key === SECRET_KEY) {
-                    let returndata = ""
-
-                    for (const [key, value] of Object.entries(playerIdMap)) {
-                        if (fs.existsSync("/home/iidk/site/Userdata/" + key.toString() + ".json")) {
-                            const datax = fs.readFileSync("/home/iidk/site/Userdata/" + key.toString() + ".json", 'utf8');
-                            const parsedData = JSON.parse(datax);
-
-                            returndata += value + " (" + key + ") was last seen in " + parsedData.room + " on " + formatTimestamp(parsedData.timestamp) + " under the name " + parsedData.nickname;
-                        } else {
-                            returndata += value + " (" + key + ") not in database";
-                        }
-                        returndata += "\n";
-                    }
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ data: returndata }));
-                } else {
+                if (key !== SECRET_KEY) {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
+                    return res.end(JSON.stringify({ status: 401 }));
                 }
+
+                let returndata = "";
+                let pending = Object.keys(playerIdMap).length;
+
+                if (pending === 0) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ data: "" }));
+                }
+
+                for (const [uid, displayName] of Object.entries(playerIdMap)) {
+                    const cleanId = uid.replace(/[^a-zA-Z0-9]/g, '');
+
+                    getLatestRecordById(cleanId, (record) => {
+                        if (!record) {
+                            returndata += `${displayName} (${cleanId}) not in database\n`;
+                        } else {
+                            returndata += `${displayName} (${cleanId}) was last seen in ${record.room ?? "??"} on ${formatTimestamp(record.timestamp)} under the name ${record.nickname ?? "??"}\n`;
+                        }
+
+                        pending--;
+
+                        if (pending === 0) {
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ data: returndata }));
+                        }
+                    });
+                }
+
             } catch (err) {
                 console.error('Error processing request:', err.message);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1488,7 +1658,7 @@ const server = http.createServer((req, res) => {
                     }
         
                     const hash = hashIpAddr(text);
-                    const cacheDir = "/home/iidk/site/Translatedata/" + lang
+                    const cacheDir = "/mnt/external/Private/backup/pi/Translatedata/" + lang
                     const cachePath = cacheDir + `/${hash}.txt`;
 
                     if (fs.existsSync(cachePath)) {
@@ -1541,84 +1711,94 @@ const server = http.createServer((req, res) => {
 
             req.on('end', () => {
                 try {
-                    const data = JSON.parse(body);
-                    const target = ipHash;
+                    const data = (body !== undefined && body !== null) ? JSON.parse(body) : JSON.parse("{}");
 
-                    if (data.key !== undefined) {
-                        if (data.key === SECRET_KEY) {
-                            target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
-                        }
+                    let target = ipHash;
+
+                    if (data.key !== undefined && data.key === SECRET_KEY) {
+                        target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
                     }
 
-                    const selfFriendData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/" + target + ".json", 'utf8').trim());
+                    const selfFriendData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Frienddata/${target}.json`, 'utf8').trim());
 
                     let returnData = {
-                        "friends": {},
-                        "incoming": {},
-                        "outgoing": {}
+                        friends: {},
+                        incoming: {},
+                        outgoing: {}
                     };
-                    
-                    selfFriendData.friends.forEach(friend => {
-                        try {
-                            const friendData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/" + friend + ".json", 'utf8').trim());
-                            const ipData = JSON.parse(fs.readFileSync("/home/iidk/site/Ipdata/" + friendData["private-ip"] + ".json", 'utf8').trim());
-                            const userData = JSON.parse(fs.readFileSync("/home/iidk/site/Userdata/" + ipData["userid"] + ".json", 'utf8').trim());
 
-                            const friendId = ipData["userid"];
-                            const lastRoom = userData["room"];
-                            const online = isUserOnline(friendData["private-ip"]);
+                    const allIdsMap = {};
 
-                            returnData.friends[friend] = {
-                                "online": online,
-                                "currentRoom": online != null ? lastRoom : "",
-                                "currentName": userData["nickname"],
-                                "currentUserID": friendId
-                            };
-                        } catch (err) {
-                            console.error(`Error processing friend ${friend}:`, err);
-                        }
+                    const processFriendArray = (array, type) => {
+                        array.forEach(friend => {
+                            try {
+                                const friendData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Frienddata/${friend}.json`, 'utf8').trim());
+                                const ipData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Ipdata/${friendData["private-ip"]}.json`, 'utf8').trim());
+                                const userId = ipData["userid"];
+                                allIdsMap[userId] = { source: type, friend };
+                            } catch (err) {
+                                console.error(`Error processing ${type} friend ${friend}:`, err);
+                            }
+                        });
+                    };
+
+                    processFriendArray(selfFriendData.friends, "friends");
+                    processFriendArray(selfFriendData.incoming, "incoming");
+                    processFriendArray(selfFriendData.outgoing, "outgoing");
+
+                    const allIds = Object.keys(allIdsMap);
+
+                    if (allIds.length <= 0)
+                    {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(returnData));
+                        return;
+                    }
+
+                    getLatestRecordsByIds(allIds, (results) => {
+                        Object.entries(results).forEach(([id, record]) => {
+                            const { source, friend } = allIdsMap[id]; // source: 'friends', 'incoming', 'outgoing'
+                            switch (source){
+                                case "friends":
+                                {
+                                    const online = isUserOnline(friend);
+                                    returnData.friends[friend] = {
+                                        "online": online,
+                                        "currentRoom": online != null ? record["room"] : "",
+                                        "currentName": record["nickname"],
+                                        "currentUserID": record["id"]
+                                    };
+                                    break;
+                                }
+                                case "incoming":
+                                {
+                                    returnData.incoming[friend] = {
+                                        "currentName": record["nickname"],
+                                        "currentUserID": record["id"]
+                                    };
+                                    break;
+                                }
+                                case "outgoing":
+                                {
+                                    returnData.outgoing[friend] = {
+                                        "currentName": record["nickname"],
+                                        "currentUserID": record["id"]
+                                    };
+                                    break;
+                                }
+                            }
+                        });
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(returnData));
                     });
-
-                    selfFriendData.incoming.forEach(friend => {
-                        try {
-                            const friendData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/" + friend + ".json", 'utf8').trim());
-                            const ipData = JSON.parse(fs.readFileSync("/home/iidk/site/Ipdata/" + friendData["private-ip"] + ".json", 'utf8').trim());
-                            const userData = JSON.parse(fs.readFileSync("/home/iidk/site/Userdata/" + ipData["userid"] + ".json", 'utf8').trim());
-
-                            returnData.incoming[friend] = {
-                                "currentName": userData["nickname"],
-                                "currentUserID": ipData["userid"]
-                            };
-                        } catch (err) {
-                            console.error(`Error processing incoming friend ${friend}:`, err);
-                        }
-                    });
-
-                    selfFriendData.outgoing.forEach(friend => {
-                        try {
-                            const friendData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/" + friend + ".json", 'utf8').trim());
-                            const ipData = JSON.parse(fs.readFileSync("/home/iidk/site/Ipdata/" + friendData["private-ip"] + ".json", 'utf8').trim());
-                            const userData = JSON.parse(fs.readFileSync("/home/iidk/site/Userdata/" + ipData["userid"] + ".json", 'utf8').trim());
-
-                            returnData.outgoing[friend] = {
-                                "currentName": userData["nickname"],
-                                "currentUserID": ipData["userid"]
-                            };
-                        } catch (err) {
-                            console.error(`Error processing outgoing friend ${friend}:`, err);
-                        }
-                    });
-
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(returnData));
                 } catch (err) {
                     console.error('Error processing request:', err.message);
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ status: 400 }));
                 }
             });
-       } else if (req.method === 'POST' && req.url === "/frienduser") {
+        } else if (req.method === 'POST' && req.url === "/frienduser") {
             if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
                 res.writeHead(429, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ status: 429, error: "Too many requests." }));
@@ -1636,7 +1816,7 @@ const server = http.createServer((req, res) => {
                 return;
             }
 
-            if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
                 bannedIps[clientIp] = Date.now();
                 console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
             }
@@ -1650,13 +1830,13 @@ const server = http.createServer((req, res) => {
                     const data = JSON.parse(body);
                     const target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
                     
-                    const targetTelemData = JSON.parse(fs.readFileSync("/home/iidk/site/Telemdata/" + target + ".json", 'utf8').trim());
-                    const ipData = JSON.parse(fs.readFileSync("/home/iidk/site/Ipdata/"+clientIp+".json", 'utf8').trim());
-                    const telemData = JSON.parse(fs.readFileSync("/home/iidk/site/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
+                    const targetTelemData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Telemdata/" + target + ".json", 'utf8').trim());
+                    const ipData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Ipdata/"+clientIp+".json", 'utf8').trim());
+                    const telemData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
 
                     const targetHash = hashIpAddr(targetTelemData["ip"]);
-                    const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
                     
                     const bypassChecks = selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash);
 
@@ -1727,8 +1907,8 @@ const server = http.createServer((req, res) => {
                         if (!targetData.outgoing.includes(ipHash))   {targetData.incoming.push(ipHash);  }
                     }
 
-                    fs.writeFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
 
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({"status": 200}));
@@ -1756,7 +1936,7 @@ const server = http.createServer((req, res) => {
                 return;
             }
 
-            if (req.headers['user-agent'] != 'UnityPlayer/6000.1.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
                 bannedIps[clientIp] = Date.now();
                 console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
             }
@@ -1770,8 +1950,8 @@ const server = http.createServer((req, res) => {
                     const data = JSON.parse(body);
                     const targetHash = data.uid.replace(/[^a-zA-Z0-9]/g, '');
 
-                    const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                     if (!targetData.friends.includes(ipHash) || !selfData.friends.includes(targetHash))
                     {
@@ -1793,8 +1973,8 @@ const server = http.createServer((req, res) => {
                         selfData.friends = selfData.friends.filter(entry => entry !== targetHash);
                     }
 
-                    fs.writeFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
 
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({"status": 200}));
@@ -1861,8 +2041,8 @@ wss.on('connection', (ws, req) => {
                         const targetRoom = data.room.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 12);
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -1882,8 +2062,8 @@ wss.on('connection', (ws, req) => {
                     {
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -1903,8 +2083,8 @@ wss.on('connection', (ws, req) => {
                         const preferences = data.preferences;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -1925,8 +2105,8 @@ wss.on('connection', (ws, req) => {
                         const theme = data.theme;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -1947,8 +2127,8 @@ wss.on('connection', (ws, req) => {
                         const macro = data.macro;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -1970,8 +2150,8 @@ wss.on('connection', (ws, req) => {
                         const color = data.color.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 12);
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/home/iidk/site/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
