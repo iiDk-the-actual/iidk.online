@@ -570,7 +570,7 @@ function sendToBanWebhook(error, version, data, ipHash) {
 
 // Cache array to store up to 500 records
 const recordCache = [];
-const MAX_CACHE_SIZE = 100;
+const MAX_CACHE_SIZE = 500;
 
 function writeRecordAutoRaw(id, nickname, room, cosmetics, color = null, platform = null, timestamp = null) {
     if (!timestamp) timestamp = Date.now();
