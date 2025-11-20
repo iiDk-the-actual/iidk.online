@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const { exec } = require('child_process');
 const sqlite3 = require("sqlite3").verbose();
 
-const db = new sqlite3.Database("/mnt/external/Private/backup/pi/records.db");
+const db = new sqlite3.Database("/mnt/external/site-data/records.db");
 
 let bannedIds = [];
 let DISCORD_WEBHOOK_URL = '';
@@ -749,7 +749,7 @@ function writeUserData(userid, nickname, cosmetics, room, color, platform, times
 function writeBanData(error, version, data, ipHash) {
     /*
     const filename = `${ipHash}.json`;
-    const filePath = '/mnt/external/Private/backup/pi/Bandata/' + filename;
+    const filePath = '/mnt/external/site-data/Bandata/' + filename;
 
     const jsonData = {
         "error": error,
@@ -764,7 +764,7 @@ function writeBanData(error, version, data, ipHash) {
 
 function writeTelemData(userid, ip, timestamp) {
     const filename = `${userid}.json`;
-    const filePath = '/mnt/external/Private/backup/pi/Telemdata/' + filename;
+    const filePath = '/mnt/external/site-data/Telemdata/' + filename;
 
     const jsonData = {
         "ip": ip,
@@ -774,7 +774,7 @@ function writeTelemData(userid, ip, timestamp) {
     fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 4), 'utf8');
 
     const filename2 = `${ip}.json`;
-    const filePath2 = '/mnt/external/Private/backup/pi/Ipdata/' + filename2;
+    const filePath2 = '/mnt/external/site-data/Ipdata/' + filename2;
 
     const jsonData2 = {
         "userid": userid,
@@ -837,7 +837,7 @@ const server = http.createServer((req, res) => {
     const clientIp = req.headers['x-forwarded-for'];
     const ipHash = hashIpAddr(clientIp);
 
-    const friendDataFileName = "/mnt/external/Private/backup/pi/Frienddata/" + ipHash + ".json";
+    const friendDataFileName = "/mnt/external/site-data/Frienddata/" + ipHash + ".json";
     if (!fs.existsSync(friendDataFileName)) {
         const jsonData = {
             "private-ip": clientIp,
@@ -1046,7 +1046,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ users: clients.size }));
     } else if (req.method === 'GET' && req.url === '/telemcount') {
-        const directory = '/mnt/external/Private/backup/pi/Telemdata';
+        const directory = '/mnt/external/site-data/Telemdata';
         countFilesInDirectory(directory).then((fileCount) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ size: fileCount }));
@@ -1183,7 +1183,7 @@ const server = http.createServer((req, res) => {
 
                 if (key === SECRET_KEY) {
                     let returndata = "{}"
-                    const dirToGet = "/mnt/external/Private/backup/pi/Telemdata/" + uid + ".json"
+                    const dirToGet = "/mnt/external/site-data/Telemdata/" + uid + ".json"
                     if (fs.existsSync(dirToGet)) {
                         const datax = fs.readFileSync(dirToGet, 'utf8');
                         returndata = datax.trim();
@@ -1658,7 +1658,7 @@ const server = http.createServer((req, res) => {
                     }
         
                     const hash = hashIpAddr(text);
-                    const cacheDir = "/mnt/external/Private/backup/pi/Translatedata/" + lang
+                    const cacheDir = "/mnt/external/site-data/Translatedata/" + lang
                     const cachePath = cacheDir + `/${hash}.txt`;
 
                     if (fs.existsSync(cachePath)) {
@@ -1719,7 +1719,7 @@ const server = http.createServer((req, res) => {
                         target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
                     }
 
-                    const selfFriendData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Frienddata/${target}.json`, 'utf8').trim());
+                    const selfFriendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${target}.json`, 'utf8').trim());
 
                     let returnData = {
                         friends: {},
@@ -1732,8 +1732,8 @@ const server = http.createServer((req, res) => {
                     const processFriendArray = (array, type) => {
                         array.forEach(friend => {
                             try {
-                                const friendData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Frienddata/${friend}.json`, 'utf8').trim());
-                                const ipData = JSON.parse(fs.readFileSync(`/mnt/external/Private/backup/pi/Ipdata/${friendData["private-ip"]}.json`, 'utf8').trim());
+                                const friendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${friend}.json`, 'utf8').trim());
+                                const ipData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Ipdata/${friendData["private-ip"]}.json`, 'utf8').trim());
                                 const userId = ipData["userid"];
                                 allIdsMap[userId] = { source: type, friend };
                             } catch (err) {
@@ -1830,13 +1830,13 @@ const server = http.createServer((req, res) => {
                     const data = JSON.parse(body);
                     const target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
                     
-                    const targetTelemData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Telemdata/" + target + ".json", 'utf8').trim());
-                    const ipData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Ipdata/"+clientIp+".json", 'utf8').trim());
-                    const telemData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
+                    const targetTelemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/" + target + ".json", 'utf8').trim());
+                    const ipData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Ipdata/"+clientIp+".json", 'utf8').trim());
+                    const telemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
 
                     const targetHash = hashIpAddr(targetTelemData["ip"]);
-                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
                     
                     const bypassChecks = selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash);
 
@@ -1907,8 +1907,8 @@ const server = http.createServer((req, res) => {
                         if (!targetData.outgoing.includes(ipHash))   {targetData.incoming.push(ipHash);  }
                     }
 
-                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
 
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({"status": 200}));
@@ -1950,8 +1950,8 @@ const server = http.createServer((req, res) => {
                     const data = JSON.parse(body);
                     const targetHash = data.uid.replace(/[^a-zA-Z0-9]/g, '');
 
-                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                     if (!targetData.friends.includes(ipHash) || !selfData.friends.includes(targetHash))
                     {
@@ -1973,8 +1973,8 @@ const server = http.createServer((req, res) => {
                         selfData.friends = selfData.friends.filter(entry => entry !== targetHash);
                     }
 
-                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
 
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({"status": 200}));
@@ -2041,8 +2041,8 @@ wss.on('connection', (ws, req) => {
                         const targetRoom = data.room.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 12);
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -2062,8 +2062,8 @@ wss.on('connection', (ws, req) => {
                     {
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -2083,8 +2083,8 @@ wss.on('connection', (ws, req) => {
                         const preferences = data.preferences;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -2105,8 +2105,8 @@ wss.on('connection', (ws, req) => {
                         const theme = data.theme;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -2127,8 +2127,8 @@ wss.on('connection', (ws, req) => {
                         const macro = data.macro;
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
@@ -2150,8 +2150,8 @@ wss.on('connection', (ws, req) => {
                         const color = data.color.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 12);
                         const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
 
-                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+targetHash+".json", 'utf8'));
-                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/Private/backup/pi/Frienddata/"+ipHash+".json", 'utf8'));
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
 
                         if (targetData.friends.includes(targetHash) || selfData.friends.includes(targetHash)) {
                             const targetWs = clients.get(targetHash);
