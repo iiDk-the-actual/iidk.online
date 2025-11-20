@@ -1281,6 +1281,38 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ status: 400 }));
             }
         });
+    } else if (req.method === 'GET' && req.url === "/sql"){
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const incoming = JSON.parse(body);
+                const key = incoming.key;
+
+                if (key !== SECRET_KEY) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ status: 401 }));
+                }
+
+                db.all(incoming.query, [], (err, rows) => {
+                    if (err) {
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ error: err.message }));
+                    }
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200, rows }));
+                });
+            } catch (err) {
+                console.error('Error processing request:', err.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            }
+        });
     } else if (req.method === 'POST' && req.url === '/inviteall') {
         let body = '';
 
