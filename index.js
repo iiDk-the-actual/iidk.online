@@ -2048,7 +2048,7 @@ wss.on('connection', (ws, req) => {
 
     if (joinDelay[clientIp] && Date.now() - joinDelay[clientIp] < 10000){
         console.log(`Blocked ${ipHash} for mass`);
-        wss.close(1008, "Wait before reconnecting to websocket");
+        ws.close(1008, "Wait before reconnecting to websocket");
         return;
     }
     joinDelay[clientIp] = Date.now();
