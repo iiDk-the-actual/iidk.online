@@ -834,906 +834,44 @@ function getRoomNameByUserId(userId) {
 }
 
 const server = http.createServer((req, res) => {
-    const clientIp = req.headers['x-forwarded-for'];
-    const ipHash = hashIpAddr(clientIp);
+    try {
+        const clientIp = req.headers['x-forwarded-for'];
+        const ipHash = hashIpAddr(clientIp);
 
-    const friendDataFileName = "/mnt/external/site-data/Frienddata/" + ipHash + ".json";
-    if (!fs.existsSync(friendDataFileName)) {
-        const jsonData = {
-            "private-ip": clientIp,
-            "friends": [],
-            "outgoing": [],
-            "incoming": []
-        };
+        const friendDataFileName = "/mnt/external/site-data/Frienddata/" + ipHash + ".json";
+        if (!fs.existsSync(friendDataFileName)) {
+            const jsonData = {
+                "private-ip": clientIp,
+                "friends": [],
+                "outgoing": [],
+                "incoming": []
+            };
 
-        fs.writeFileSync(friendDataFileName, JSON.stringify(jsonData, null, 4), 'utf8');
-    }
-
-    console.log(ipHash + " " + req.method + " " + req.url);
-
-    if (req.method === 'POST' && req.url === '/telementery' || req.url === "/telemetry") {
-        if (ipRequestTimestamps[clientIp] && Date.now() - ipRequestTimestamps[clientIp] < 6000) {
-            res.writeHead(429, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 429 }));
-            return;
+            fs.writeFileSync(friendDataFileName, JSON.stringify(jsonData, null, 4), 'utf8');
         }
 
-        ipRequestTimestamps[clientIp] = Date.now();
+        console.log(ipHash + " " + req.method + " " + req.url);
 
-        if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
-            console.log("Banned user attempting to post data")
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 400 }));
-            return;
-        }
-
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
-            bannedIps[clientIp] = Date.now();
-            console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
-        }
-
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const { directory, identity } = data;
-
-                let region = "NULL";
-
-                if (data.region !== undefined) {
-                    region = data.region
-                }
-
-                let userid = "NULL";
-
-                if (data.userid !== undefined) {
-                    userid = data.userid
-                }
-
-                let isPrivate = data.directory.length == 4;
-
-                if (data.isPrivate !== undefined) {
-                    isPrivate = data.isPrivate
-                }
-
-                let playerCount = -1;
-
-                if (data.playerCount !== undefined) {
-                    playerCount = data.playerCount
-                }
-
-                let gameMode = "NULL";
-
-                if (data.gameMode !== undefined) {
-                    gameMode = data.gameMode
-                }
-
-                let consoleVersion = "NULL";
-
-                if (data.consoleVersion !== undefined) {
-                    consoleVersion = data.consoleVersion
-                }
-
-                let menuName = "NULL";
-
-                if (data.menuName !== undefined) {
-                    menuName = data.menuName
-                }
-
-                let menuVersion = "NULL";
-
-                if (data.menuVersion !== undefined) {
-                    menuVersion = data.menuVersion
-                }
-
-                const cleanedData = cleanAndFormatData({ directory, identity, region, userid, isPrivate, playerCount, gameMode, consoleVersion, menuName, menuVersion });
-                
-                activeRooms[cleanedData.directory] = {
-                    region: cleanedData.region,
-                    gameMode: cleanedData.gameMode,
-                    playerCount: cleanedData.playerCount,
-                    isPrivate: cleanedData.isPrivate,
-                    timestamp: Date.now()
-                };
-
-                writeTelemData(cleanedData.userid, clientIp, Date.now())
-                sendToDiscordWebhook(cleanedData);
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 200 }));
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/syncdata') {
-        if (syncDataRequestTimestamps[clientIp] && Date.now() - syncDataRequestTimestamps[clientIp] < 2500) {
-            res.writeHead(429, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 429 }));
-            return;
-        }
-
-        syncDataRequestTimestamps[clientIp] = Date.now();
-        
-        if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
-            console.log("Banned user attempting to post data")
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 200 }));
-            return;
-        }
-
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
-            bannedIps[clientIp] = Date.now();
-            console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
-        }
-
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const jsonbody = JSON.parse(body);
-                const { directory, region, data } = jsonbody;
-
-                const cleanedData = cleanAndFormatSyncData({ directory, region, data });
-
-                activeUserData[cleanedData.directory] = {
-                    region: cleanedData.region,
-                    roomdata: cleanedData.data,
-                    timestamp: Date.now()
-                };
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 200 }));
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/reportban') {
-        if (reportBanRequestTimestamps[clientIp] && Date.now() - reportBanRequestTimestamps[clientIp] < 1800000) {
-            res.writeHead(429, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 429 }));
-            return;
-        }
-
-        reportBanRequestTimestamps[clientIp] = Date.now();
-        
-        if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
-            console.log("Banned user attempting to post data")
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 200 }));
-            return;
-        }
-
-        if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
-            bannedIps[clientIp] = Date.now();
-            console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
-        }
-
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const jsonbody = JSON.parse(body);
-                const { error, version, data } = jsonbody;
-
-                processBanData({ error, version, data }, ipHash);
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 200 }));
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/usercount') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ users: clients.size }));
-    } else if (req.method === 'GET' && req.url === '/telemcount') {
-        const directory = '/mnt/external/site-data/Telemdata';
-        countFilesInDirectory(directory).then((fileCount) => {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ size: fileCount }));
-        }).catch((error) => {
-            console.error('Error processing request:', error.message);
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 400 }));
-        });
-    } else if (req.method === 'GET' && req.url === '/rooms') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-
-                if (key === SECRET_KEY) {
-                    const roomsToDelete = [];
-                    const currentTime = Date.now();
-                    Object.entries(activeRooms).forEach(([directory, room]) => {
-                        if (currentTime - room.timestamp > 10 * 60 * 1000)
-                        {
-                            roomsToDelete.push(directory);
-                        }
-                    });
-
-                    roomsToDelete.forEach(directory => {
-                        delete activeRooms[directory];
-                    });
-                    
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ activeRooms }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/getsyncdata') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-
-                if (key === SECRET_KEY) {
-                    const roomsToDelete = [];
-                    const currentTime = Date.now();
-                    Object.entries(activeUserData).forEach(([directory, room]) => {
-                        if (currentTime - room.timestamp > 10 * 60 * 1000)
-                        {
-                            roomsToDelete.push(directory);
-                        }
-                    });
-
-                    roomsToDelete.forEach(directory => {
-                        delete activeUserData[directory];
-                    });
-                    
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ activeUserData }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/getuserdata') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
-
-                if (key === SECRET_KEY) {
-                    getLatestRecordById(uid, (data) => {
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-
-                        if (!data){
-                            res.end("{}");
-                        } else {
-                            res.end(JSON.stringify(data));
-                        }
-                    });
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/serverdata'){
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(serverData);
-    } 
-    else if (req.method === 'GET' && req.url === '/gettelemdata') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
-
-                if (key === SECRET_KEY) {
-                    let returndata = "{}"
-                    const dirToGet = "/mnt/external/site-data/Telemdata/" + uid + ".json"
-                    if (fs.existsSync(dirToGet)) {
-                        const datax = fs.readFileSync(dirToGet, 'utf8');
-                        returndata = datax.trim();
-                    } else {
-                        console.log('UID file does not exist.');
-                    }
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(returndata);
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/vote') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const option = data.option;
-
-                if (incrementVote(option, ipHash)){
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(getVoteCounts());
-                } else {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: "You have already voted" }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/votes') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(getVoteCounts());
-    } else if (req.method === 'GET' && req.url === '/playermap') { // Shit
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const incoming = JSON.parse(body);
-                const key = incoming.key;
-
-                if (key !== SECRET_KEY) {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ status: 401 }));
-                }
-
-                let returndata = "";
-                let pending = Object.keys(playerIdMap).length;
-
-                if (pending === 0) {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ data: "" }));
-                }
-
-                for (const [uid, displayName] of Object.entries(playerIdMap)) {
-                    const cleanId = uid.replace(/[^a-zA-Z0-9]/g, '');
-
-                    getLatestRecordById(cleanId, (record) => {
-                        if (!record) {
-                            returndata += `${displayName} (${cleanId}) not in database\n`;
-                        } else {
-                            returndata += `${displayName} (${cleanId}) was last seen in ${record.room ?? "??"} on ${formatTimestamp(record.timestamp)} under the name ${record.nickname ?? "??"}\n`;
-                        }
-
-                        pending--;
-
-                        if (pending === 0) {
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ data: returndata }));
-                        }
-                    });
-                }
-
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === "/sql"){
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const incoming = JSON.parse(body);
-                const key = incoming.key;
-
-                if (key !== SECRET_KEY) {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ status: 401 }));
-                }
-
-                db.all(incoming.query, [], (err, rows) => {
-                    if (err) {
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        return res.end(JSON.stringify({ error: err.message }));
-                    }
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200, rows }));
-                });
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/inviteall') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const room = data.to;
-
-                if (key === SECRET_KEY) {
-                    const message = JSON.stringify({
-                        command: "invite",
-                        from: "Server",
-                        to: room
-                    });
-
-                    for (const [, ws] of clients) {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(message);
-                        }
-                    }
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200 }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/inviterandom') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const count = data.count;
-                const room = data.to;
-
-                if (key === SECRET_KEY) {
-                    const message = JSON.stringify({
-                        command: "invite",
-                        from: "Server",
-                        to: room
-                    });
-
-                    const sockets = Array.from(clients.values());
-
-                    for (let i = sockets.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [sockets[i], sockets[j]] = [sockets[j], sockets[i]];
-                    }
-
-                    sockets.slice(0, count).forEach(ws => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(message);
-                        }
-                    });
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200 }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/notify') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const mess = data.message;
-                const time = data.time;
-
-                if (key === SECRET_KEY) {
-                    const message = JSON.stringify({
-                        command: "notification",
-                        from: "Server",
-                        message: mess,
-                        time: time
-                    });
-
-                    for (const [, ws] of clients) {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(message);
-                        }
-                    }
-                    
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200 }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/blacklistid') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const id = data.id;
-
-                if (key === SECRET_KEY) {
-                    bannedIds.push(id);
-                    fs.appendFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
-                    
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200 }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/unblacklistid') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const id = data.id;
-
-                if (key === SECRET_KEY) {
-                    bannedIds.pop(id);
-                    fs.writeFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 200 }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/addadmin') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const name = data.name;
-                const id = data.id;
-
-                if (key === SECRET_KEY) {
-                    if (addAdmin(name, id)){
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 200 }));
-                    } else {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 400 }));
-                    }
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/removeadmin') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const id = data.id;
-
-                if (key === SECRET_KEY) {
-                    if (removeAdmin(id)){
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 200 }));
-                    } else {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 400 }));
-                    }
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/setpoll') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-                const poll = data.poll;
-                const a = data.a;
-                const b = data.b;
-
-                if (key === SECRET_KEY) {
-                    if (setPoll(poll, a, b)){
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 200 }));
-                    } else {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 400 }));
-                    }
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'GET' && req.url === '/getblacklisted') {
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const key = data.key;
-
-                if (key === SECRET_KEY) {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ data: bannedIds.join("\n") }));
-                } else {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 401 }));
-                }
-            } catch (err) {
-                console.error('Error processing request:', err.message);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 400 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/tts') {
-        let body = '';
-    
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-    
-        req.on('end', async () => {
-            try {
-                const data = JSON.parse(body);
-                let { text, lang = 'en' } = data;
-    
-                if (!text) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 400 }));
-                    return;
-                }
-
-                text = text.substring(0, 4096);
-                lang = lang.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)
-
-                const outputPath = 'output.wav';
-                const noRCE = text.replace(/(["'$`\\])/g, '\\$1');
-
-                exec(`flite -t "${noRCE}" -o ${outputPath}`, (error, stdout, stderr) => {
-                    if (error) {
-                        console.error(`Error generating TTS with flite: ${error.message}`);
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 500 }));
-                        return;
-                    }
-
-                    fs.readFile(outputPath, (err, data) => {
-                        if (err) {
-                            console.error('Error reading WAV file:', err.message);
-                            res.writeHead(500, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ status: 500 }));
-                            return;
-                        }
-    
-                        res.writeHead(200, { 'Content-Type': 'audio/wav' });
-                        res.end(data, 'binary');
-                    });
-                });
-    
-            } catch (err) {
-                console.error('Error generating TTS:', err.message);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 500 }));
-            }
-        });
-    } else if (req.method === 'POST' && req.url === '/translate') {
-           let body = '';
-       
-           req.on('data', chunk => {
-               body += chunk.toString();
-           });
-       
-           req.on('end', async () => {
-               try {
-                    const data = JSON.parse(body);
-                    let { text, lang = 'es' } = data;
-
-                    text = text.replace(/(["'$`\\])/g, '\\$1').substring(0, 4096); 
-                    lang = lang.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)
-        
-                    if (!text) {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ status: 400, error: 'Missing text' }));
-                        return;
-                    }
-        
-                    const hash = hashIpAddr(text);
-                    const cacheDir = "/mnt/external/site-data/Translatedata/" + lang
-                    const cachePath = cacheDir + `/${hash}.txt`;
-
-                    if (fs.existsSync(cachePath)) {
-                        const cached = fs.readFileSync(cachePath, 'utf8');
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ translation: cached }));
-                        return;
-                    }
-                    
-                    const extractedTags = extractTags(text);
-
-                    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
-                    const response = await fetch(url);
-        
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-                    const result = await response.json();
-                    let translation = result[0].map(x => x[0]).join('');
-                    
-                    translation = replaceTags(translation, extractedTags)
-
-                    if (!fs.existsSync(cacheDir)) {
-                        fs.mkdirSync(cacheDir, { recursive: true });
-                    }
-
-                    fs.writeFileSync(cachePath, translation, 'utf8');
-        
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ translation }));
-               } catch (err) {
-                   console.error('Translation error:', err.message);
-                   res.writeHead(500, { 'Content-Type': 'application/json' });
-                   res.end(JSON.stringify({ status: 500 }));
-               }
-           });
-       } else if (req.method === 'GET' && req.url === "/getfriends") {
-            if (getFriendTime[clientIp] && Date.now() - getFriendTime[clientIp] < 29000) {
+        if (req.method === 'POST' && req.url === '/telementery' || req.url === "/telemetry") {
+            if (ipRequestTimestamps[clientIp] && Date.now() - ipRequestTimestamps[clientIp] < 6000) {
                 res.writeHead(429, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ status: 429 }));
                 return;
             }
 
-            getFriendTime[clientIp] = Date.now();
+            ipRequestTimestamps[clientIp] = Date.now();
+
+            if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
+                console.log("Banned user attempting to post data")
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+                return;
+            }
+
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+                bannedIps[clientIp] = Date.now();
+                console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
+            }
 
             let body = '';
 
@@ -1743,86 +881,432 @@ const server = http.createServer((req, res) => {
 
             req.on('end', () => {
                 try {
-                    const data = (body !== undefined && body !== null) ? JSON.parse(body) : JSON.parse("{}");
+                    const data = JSON.parse(body);
+                    const { directory, identity } = data;
 
-                    let target = ipHash;
+                    let region = "NULL";
 
-                    if (data.key !== undefined && data.key === SECRET_KEY) {
-                        target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+                    if (data.region !== undefined) {
+                        region = data.region
                     }
 
-                    const selfFriendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${target}.json`, 'utf8').trim());
+                    let userid = "NULL";
 
-                    let returnData = {
-                        friends: {},
-                        incoming: {},
-                        outgoing: {}
-                    };
-
-                    const allIdsMap = {};
-
-                    const processFriendArray = (array, type) => {
-                        array.forEach(friend => {
-                            try {
-                                const friendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${friend}.json`, 'utf8').trim());
-                                const ipData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Ipdata/${friendData["private-ip"]}.json`, 'utf8').trim());
-                                const userId = ipData["userid"];
-                                allIdsMap[userId] = { source: type, friend };
-                            } catch (err) {
-                                console.error(`Error processing ${type} friend ${friend}:`, err);
-                            }
-                        });
-                    };
-
-                    processFriendArray(selfFriendData.friends, "friends");
-                    processFriendArray(selfFriendData.incoming, "incoming");
-                    processFriendArray(selfFriendData.outgoing, "outgoing");
-
-                    const allIds = Object.keys(allIdsMap);
-
-                    if (allIds.length <= 0)
-                    {
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(returnData));
-                        return;
+                    if (data.userid !== undefined) {
+                        userid = data.userid
                     }
 
-                    getLatestRecordsByIds(allIds, (results) => {
-                        Object.entries(results).forEach(([id, record]) => {
-                            const { source, friend } = allIdsMap[id]; // source: 'friends', 'incoming', 'outgoing'
-                            switch (source){
-                                case "friends":
-                                {
-                                    const online = isUserOnline(friend);
-                                    returnData.friends[friend] = {
-                                        "online": online,
-                                        "currentRoom": online != null ? record["room"] : "",
-                                        "currentName": record["nickname"],
-                                        "currentUserID": record["id"]
-                                    };
-                                    break;
-                                }
-                                case "incoming":
-                                {
-                                    returnData.incoming[friend] = {
-                                        "currentName": record["nickname"],
-                                        "currentUserID": record["id"]
-                                    };
-                                    break;
-                                }
-                                case "outgoing":
-                                {
-                                    returnData.outgoing[friend] = {
-                                        "currentName": record["nickname"],
-                                        "currentUserID": record["id"]
-                                    };
-                                    break;
-                                }
+                    let isPrivate = data.directory.length == 4;
+
+                    if (data.isPrivate !== undefined) {
+                        isPrivate = data.isPrivate
+                    }
+
+                    let playerCount = -1;
+
+                    if (data.playerCount !== undefined) {
+                        playerCount = data.playerCount
+                    }
+
+                    let gameMode = "NULL";
+
+                    if (data.gameMode !== undefined) {
+                        gameMode = data.gameMode
+                    }
+
+                    let consoleVersion = "NULL";
+
+                    if (data.consoleVersion !== undefined) {
+                        consoleVersion = data.consoleVersion
+                    }
+
+                    let menuName = "NULL";
+
+                    if (data.menuName !== undefined) {
+                        menuName = data.menuName
+                    }
+
+                    let menuVersion = "NULL";
+
+                    if (data.menuVersion !== undefined) {
+                        menuVersion = data.menuVersion
+                    }
+
+                    const cleanedData = cleanAndFormatData({ directory, identity, region, userid, isPrivate, playerCount, gameMode, consoleVersion, menuName, menuVersion });
+                    
+                    activeRooms[cleanedData.directory] = {
+                        region: cleanedData.region,
+                        gameMode: cleanedData.gameMode,
+                        playerCount: cleanedData.playerCount,
+                        isPrivate: cleanedData.isPrivate,
+                        timestamp: Date.now()
+                    };
+
+                    writeTelemData(cleanedData.userid, clientIp, Date.now())
+                    sendToDiscordWebhook(cleanedData);
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200 }));
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/syncdata') {
+            if (syncDataRequestTimestamps[clientIp] && Date.now() - syncDataRequestTimestamps[clientIp] < 2500) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 429 }));
+                return;
+            }
+
+            syncDataRequestTimestamps[clientIp] = Date.now();
+            
+            if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
+                console.log("Banned user attempting to post data")
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 200 }));
+                return;
+            }
+
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+                bannedIps[clientIp] = Date.now();
+                console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
+            }
+
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const jsonbody = JSON.parse(body);
+                    const { directory, region, data } = jsonbody;
+
+                    const cleanedData = cleanAndFormatSyncData({ directory, region, data });
+
+                    activeUserData[cleanedData.directory] = {
+                        region: cleanedData.region,
+                        roomdata: cleanedData.data,
+                        timestamp: Date.now()
+                    };
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200 }));
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/reportban') {
+            if (reportBanRequestTimestamps[clientIp] && Date.now() - reportBanRequestTimestamps[clientIp] < 1800000) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 429 }));
+                return;
+            }
+
+            reportBanRequestTimestamps[clientIp] = Date.now();
+            
+            if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
+                console.log("Banned user attempting to post data")
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 200 }));
+                return;
+            }
+
+            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+                bannedIps[clientIp] = Date.now();
+                console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
+            }
+
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const jsonbody = JSON.parse(body);
+                    const { error, version, data } = jsonbody;
+
+                    processBanData({ error, version, data }, ipHash);
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200 }));
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/usercount') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ users: clients.size }));
+        } else if (req.method === 'GET' && req.url === '/telemcount') {
+            const directory = '/mnt/external/site-data/Telemdata';
+            countFilesInDirectory(directory).then((fileCount) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ size: fileCount }));
+            }).catch((error) => {
+                console.error('Error processing request:', error.message);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 400 }));
+            });
+        } else if (req.method === 'GET' && req.url === '/rooms') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+
+                    if (key === SECRET_KEY) {
+                        const roomsToDelete = [];
+                        const currentTime = Date.now();
+                        Object.entries(activeRooms).forEach(([directory, room]) => {
+                            if (currentTime - room.timestamp > 10 * 60 * 1000)
+                            {
+                                roomsToDelete.push(directory);
                             }
                         });
 
+                        roomsToDelete.forEach(directory => {
+                            delete activeRooms[directory];
+                        });
+                        
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(returnData));
+                        res.end(JSON.stringify({ activeRooms }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/getsyncdata') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+
+                    if (key === SECRET_KEY) {
+                        const roomsToDelete = [];
+                        const currentTime = Date.now();
+                        Object.entries(activeUserData).forEach(([directory, room]) => {
+                            if (currentTime - room.timestamp > 10 * 60 * 1000)
+                            {
+                                roomsToDelete.push(directory);
+                            }
+                        });
+
+                        roomsToDelete.forEach(directory => {
+                            delete activeUserData[directory];
+                        });
+                        
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ activeUserData }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/getuserdata') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+
+                    if (key === SECRET_KEY) {
+                        getLatestRecordById(uid, (data) => {
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+
+                            if (!data){
+                                res.end("{}");
+                            } else {
+                                res.end(JSON.stringify(data));
+                            }
+                        });
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/serverdata'){
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(serverData);
+        } 
+        else if (req.method === 'GET' && req.url === '/gettelemdata') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const uid = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+
+                    if (key === SECRET_KEY) {
+                        let returndata = "{}"
+                        const dirToGet = "/mnt/external/site-data/Telemdata/" + uid + ".json"
+                        if (fs.existsSync(dirToGet)) {
+                            const datax = fs.readFileSync(dirToGet, 'utf8');
+                            returndata = datax.trim();
+                        } else {
+                            console.log('UID file does not exist.');
+                        }
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(returndata);
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/vote') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const option = data.option;
+
+                    if (incrementVote(option, ipHash)){
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(getVoteCounts());
+                    } else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: "You have already voted" }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/votes') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(getVoteCounts());
+        } else if (req.method === 'GET' && req.url === '/playermap') { // Shit
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const incoming = JSON.parse(body);
+                    const key = incoming.key;
+
+                    if (key !== SECRET_KEY) {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ status: 401 }));
+                    }
+
+                    let returndata = "";
+                    let pending = Object.keys(playerIdMap).length;
+
+                    if (pending === 0) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ data: "" }));
+                    }
+
+                    for (const [uid, displayName] of Object.entries(playerIdMap)) {
+                        const cleanId = uid.replace(/[^a-zA-Z0-9]/g, '');
+
+                        getLatestRecordById(cleanId, (record) => {
+                            if (!record) {
+                                returndata += `${displayName} (${cleanId}) not in database\n`;
+                            } else {
+                                returndata += `${displayName} (${cleanId}) was last seen in ${record.room ?? "??"} on ${formatTimestamp(record.timestamp)} under the name ${record.nickname ?? "??"}\n`;
+                            }
+
+                            pending--;
+
+                            if (pending === 0) {
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ data: returndata }));
+                            }
+                        });
+                    }
+
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === "/sql"){
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const incoming = JSON.parse(body);
+                    const key = incoming.key;
+
+                    if (key !== SECRET_KEY) {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ status: 401 }));
+                    }
+
+                    db.all(incoming.query, [], (err, rows) => {
+                        if (err) {
+                            res.writeHead(500, { 'Content-Type': 'application/json' });
+                            return res.end(JSON.stringify({ error: err.message }));
+                        }
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200, rows }));
                     });
                 } catch (err) {
                     console.error('Error processing request:', err.message);
@@ -1830,28 +1314,8 @@ const server = http.createServer((req, res) => {
                     res.end(JSON.stringify({ status: 400 }));
                 }
             });
-        } else if (req.method === 'POST' && req.url === "/frienduser") {
-            if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
-                res.writeHead(429, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 429, error: "Too many requests." }));
-                return;
-            }
-
-            friendModifyTime[clientIp] = Date.now();
-        
+        } else if (req.method === 'POST' && req.url === '/inviteall') {
             let body = '';
-
-            if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
-                console.log("Banned user attempting to post data")
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 200 }));
-                return;
-            }
-
-            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
-                bannedIps[clientIp] = Date.now();
-                console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
-            }
 
             req.on('data', chunk => {
                 body += chunk.toString();
@@ -1860,118 +1324,36 @@ const server = http.createServer((req, res) => {
             req.on('end', () => {
                 try {
                     const data = JSON.parse(body);
-                    const target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
-                    
-                    const targetTelemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/" + target + ".json", 'utf8').trim());
-                    const ipData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Ipdata/"+clientIp+".json", 'utf8').trim());
-                    const telemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
+                    const key = data.key;
+                    const room = data.to;
 
-                    const targetHash = hashIpAddr(targetTelemData["ip"]);
-                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
-                    
-                    const bypassChecks = selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash);
+                    if (key === SECRET_KEY) {
+                        const message = JSON.stringify({
+                            command: "invite",
+                            from: "Server",
+                            to: room
+                        });
 
-                    if (targetTelemData["ip"] === clientIp)
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You are trying to friend yourself."}));
-                        return;
-                    }
-                    
-                    if (telemData["ip"] != clientIp && !bypassChecks)
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You are trying to friend yourself."}));
-                        return;
-                    }
+                        for (const [, ws] of clients) {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(message);
+                            }
+                        }
 
-                    if (!isUserOnline(clientIp)){
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You are not connected to the websocket."}));
-                        return;
-                    }
-
-                    if (selfData.friends.length >= 50)
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You have hit the friend limit."}));
-                        return;
-                    }
-
-                    if (targetData.friends.length >= 50)
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "This person has hit the friend limit."}));
-                        return;
-                    }
-
-                    if (selfData.outgoing.length >= 50)
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You have hit the outgoing friend request limit."}));
-                        return;
-                    }
-
-                    if (targetData.friends.includes(ipHash) || selfData.friends.includes(targetHash))
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You are already friends with this person."}));
-                        return;
-                    }
-
-                    if (targetData.incoming.includes(ipHash))
-                    {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({"status": 400, "error": "You have already sent a friend request to this person."}));
-                        return;
-                    }
-
-                    if (selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash))
-                    {
-                        selfData.incoming = selfData.incoming.filter(entry => entry !== targetHash);
-                        targetData.outgoing = targetData.outgoing.filter(entry => entry !== ipHash);
-
-                        if (!selfData.friends.includes(targetHash)) {selfData.friends.push(targetHash);}
-                        if (!targetData.friends.includes(ipHash))   {targetData.friends.push(ipHash);}
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
                     } else {
-                        if (!selfData.outgoing.includes(targetHash)) {selfData.outgoing.push(targetHash);}
-                        if (!targetData.outgoing.includes(ipHash))   {targetData.incoming.push(ipHash);  }
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
                     }
-
-                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({"status": 200}));
                 } catch (err) {
                     console.error('Error processing request:', err.message);
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ status: 400 }));
                 }
             });
-       } else if (req.method === 'POST' && req.url === "/unfrienduser") {
-            if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
-                res.writeHead(429, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 429, error: "Too many requests." }));
-                return;
-            }
-
-            friendModifyTime[clientIp] = Date.now();
-
+        } else if (req.method === 'POST' && req.url === '/inviterandom') {
             let body = '';
-
-            if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
-                console.log("Banned user attempting to post data")
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 200 }));
-                return;
-            }
-
-            if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
-                bannedIps[clientIp] = Date.now();
-                console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
-            }
 
             req.on('data', chunk => {
                 body += chunk.toString();
@@ -1980,53 +1362,675 @@ const server = http.createServer((req, res) => {
             req.on('end', () => {
                 try {
                     const data = JSON.parse(body);
-                    const targetHash = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+                    const key = data.key;
+                    const count = data.count;
+                    const room = data.to;
 
-                    const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
-                    const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
+                    if (key === SECRET_KEY) {
+                        const message = JSON.stringify({
+                            command: "invite",
+                            from: "Server",
+                            to: room
+                        });
 
-                    if (!targetData.friends.includes(ipHash) || !selfData.friends.includes(targetHash))
-                    {
-                        if (selfData.outgoing.includes(targetHash) || targetData.incoming.includes(ipHash))
+                        const sockets = Array.from(clients.values());
+
+                        for (let i = sockets.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [sockets[i], sockets[j]] = [sockets[j], sockets[i]];
+                        }
+
+                        sockets.slice(0, count).forEach(ws => {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(message);
+                            }
+                        });
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/notify') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const mess = data.message;
+                    const time = data.time;
+
+                    if (key === SECRET_KEY) {
+                        const message = JSON.stringify({
+                            command: "notification",
+                            from: "Server",
+                            message: mess,
+                            time: time
+                        });
+
+                        for (const [, ws] of clients) {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(message);
+                            }
+                        }
+                        
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/blacklistid') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const id = data.id;
+
+                    if (key === SECRET_KEY) {
+                        bannedIds.push(id);
+                        fs.appendFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
+                        
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/unblacklistid') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const id = data.id;
+
+                    if (key === SECRET_KEY) {
+                        bannedIds.pop(id);
+                        fs.writeFileSync("/home/iidk/site/bannedids.txt", bannedIds.join("\n"))
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 200 }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/addadmin') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const name = data.name;
+                    const id = data.id;
+
+                    if (key === SECRET_KEY) {
+                        if (addAdmin(name, id)){
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 200 }));
+                        } else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 400 }));
+                        }
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/removeadmin') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const id = data.id;
+
+                    if (key === SECRET_KEY) {
+                        if (removeAdmin(id)){
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 200 }));
+                        } else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 400 }));
+                        }
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/setpoll') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+                    const poll = data.poll;
+                    const a = data.a;
+                    const b = data.b;
+
+                    if (key === SECRET_KEY) {
+                        if (setPoll(poll, a, b)){
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 200 }));
+                        } else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 400 }));
+                        }
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === '/getblacklisted') {
+            let body = '';
+
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const key = data.key;
+
+                    if (key === SECRET_KEY) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ data: bannedIds.join("\n") }));
+                    } else {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 401 }));
+                    }
+                } catch (err) {
+                    console.error('Error processing request:', err.message);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 400 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/tts') {
+            let body = '';
+        
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+        
+            req.on('end', async () => {
+                try {
+                    const data = JSON.parse(body);
+                    let { text, lang = 'en' } = data;
+        
+                    if (!text) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                        return;
+                    }
+
+                    text = text.substring(0, 4096);
+                    lang = lang.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)
+
+                    const outputPath = 'output.wav';
+                    const noRCE = text.replace(/(["'$`\\])/g, '\\$1');
+
+                    exec(`flite -t "${noRCE}" -o ${outputPath}`, (error, stdout, stderr) => {
+                        if (error) {
+                            console.error(`Error generating TTS with flite: ${error.message}`);
+                            res.writeHead(500, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 500 }));
+                            return;
+                        }
+
+                        fs.readFile(outputPath, (err, data) => {
+                            if (err) {
+                                console.error('Error reading WAV file:', err.message);
+                                res.writeHead(500, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ status: 500 }));
+                                return;
+                            }
+        
+                            res.writeHead(200, { 'Content-Type': 'audio/wav' });
+                            res.end(data, 'binary');
+                        });
+                    });
+        
+                } catch (err) {
+                    console.error('Error generating TTS:', err.message);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 500 }));
+                }
+            });
+        } else if (req.method === 'POST' && req.url === '/translate') {
+            let body = '';
+        
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+        
+            req.on('end', async () => {
+                try {
+                        const data = JSON.parse(body);
+                        let { text, lang = 'es' } = data;
+
+                        text = text.replace(/(["'$`\\])/g, '\\$1').substring(0, 4096); 
+                        lang = lang.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)
+            
+                        if (!text) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ status: 400, error: 'Missing text' }));
+                            return;
+                        }
+            
+                        const hash = hashIpAddr(text);
+                        const cacheDir = "/mnt/external/site-data/Translatedata/" + lang
+                        const cachePath = cacheDir + `/${hash}.txt`;
+
+                        if (fs.existsSync(cachePath)) {
+                            const cached = fs.readFileSync(cachePath, 'utf8');
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ translation: cached }));
+                            return;
+                        }
+                        
+                        const extractedTags = extractTags(text);
+
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
+                        const response = await fetch(url);
+            
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+                        const result = await response.json();
+                        let translation = result[0].map(x => x[0]).join('');
+                        
+                        translation = replaceTags(translation, extractedTags)
+
+                        if (!fs.existsSync(cacheDir)) {
+                            fs.mkdirSync(cacheDir, { recursive: true });
+                        }
+
+                        fs.writeFileSync(cachePath, translation, 'utf8');
+            
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ translation }));
+                } catch (err) {
+                    console.error('Translation error:', err.message);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 500 }));
+                }
+            });
+        } else if (req.method === 'GET' && req.url === "/getfriends") {
+                if (getFriendTime[clientIp] && Date.now() - getFriendTime[clientIp] < 29000) {
+                    res.writeHead(429, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 429 }));
+                    return;
+                }
+
+                getFriendTime[clientIp] = Date.now();
+
+                let body = '';
+
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+
+                req.on('end', () => {
+                    try {
+                        const data = (body !== undefined && body !== null) ? JSON.parse(body) : JSON.parse("{}");
+
+                        let target = ipHash;
+
+                        if (data.key !== undefined && data.key === SECRET_KEY) {
+                            target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+                        }
+
+                        const selfFriendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${target}.json`, 'utf8').trim());
+
+                        let returnData = {
+                            friends: {},
+                            incoming: {},
+                            outgoing: {}
+                        };
+
+                        const allIdsMap = {};
+
+                        const processFriendArray = (array, type) => {
+                            array.forEach(friend => {
+                                try {
+                                    const friendData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Frienddata/${friend}.json`, 'utf8').trim());
+                                    const ipData = JSON.parse(fs.readFileSync(`/mnt/external/site-data/Ipdata/${friendData["private-ip"]}.json`, 'utf8').trim());
+                                    const userId = ipData["userid"];
+                                    allIdsMap[userId] = { source: type, friend };
+                                } catch (err) {
+                                    console.error(`Error processing ${type} friend ${friend}:`, err);
+                                }
+                            });
+                        };
+
+                        processFriendArray(selfFriendData.friends, "friends");
+                        processFriendArray(selfFriendData.incoming, "incoming");
+                        processFriendArray(selfFriendData.outgoing, "outgoing");
+
+                        const allIds = Object.keys(allIdsMap);
+
+                        if (allIds.length <= 0)
                         {
-                            selfData.outgoing = selfData.outgoing.filter(entry => entry !== targetHash);
-                            targetData.incoming = targetData.incoming.filter(entry => entry !== ipHash);
-                        } else if (selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash))
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify(returnData));
+                            return;
+                        }
+
+                        getLatestRecordsByIds(allIds, (results) => {
+                            Object.entries(results).forEach(([id, record]) => {
+                                const { source, friend } = allIdsMap[id]; // source: 'friends', 'incoming', 'outgoing'
+                                switch (source){
+                                    case "friends":
+                                    {
+                                        const online = isUserOnline(friend);
+                                        returnData.friends[friend] = {
+                                            "online": online,
+                                            "currentRoom": online != null ? record?.room ?? null : "",
+                                            "currentName": record?.nickname ?? null,
+                                            "currentUserID": record?.id ?? null
+                                        };
+                                        break;
+                                    }
+                                    case "incoming":
+                                    {
+                                        returnData.incoming[friend] = {
+                                            "currentName": record?.nickname ?? null,
+                                            "currentUserID": record?.id ?? null
+                                        };
+                                        break;
+                                    }
+                                    case "outgoing":
+                                    {
+                                        returnData.outgoing[friend] = {
+                                            "currentName": record?.nickname ?? null,
+                                            "currentUserID": record?.id ?? null
+                                        };
+                                        break;
+                                    }
+                                }
+                            });
+
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify(returnData));
+                        });
+                    } catch (err) {
+                        console.error('Error processing request:', err.message);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                    }
+                });
+            } else if (req.method === 'POST' && req.url === "/frienduser") {
+                if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
+                    res.writeHead(429, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 429, error: "Too many requests." }));
+                    return;
+                }
+
+                friendModifyTime[clientIp] = Date.now();
+            
+                let body = '';
+
+                if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
+                    console.log("Banned user attempting to post data")
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200 }));
+                    return;
+                }
+
+                if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+                    bannedIps[clientIp] = Date.now();
+                    console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
+                }
+
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+
+                req.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        const target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+                        
+                        const targetTelemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/" + target + ".json", 'utf8').trim());
+                        const ipData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Ipdata/"+clientIp+".json", 'utf8').trim());
+                        const telemData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Telemdata/"+ipData["userid"]+".json", 'utf8').trim());
+
+                        const targetHash = hashIpAddr(targetTelemData["ip"]);
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
+                        
+                        const bypassChecks = selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash);
+
+                        if (targetTelemData["ip"] === clientIp)
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You are trying to friend yourself."}));
+                            return;
+                        }
+                        
+                        if (telemData["ip"] != clientIp && !bypassChecks)
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You are trying to friend yourself."}));
+                            return;
+                        }
+
+                        if (!isUserOnline(clientIp)){
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You are not connected to the websocket."}));
+                            return;
+                        }
+
+                        if (selfData.friends.length >= 50)
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You have hit the friend limit."}));
+                            return;
+                        }
+
+                        if (targetData.friends.length >= 50)
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "This person has hit the friend limit."}));
+                            return;
+                        }
+
+                        if (selfData.outgoing.length >= 50)
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You have hit the outgoing friend request limit."}));
+                            return;
+                        }
+
+                        if (targetData.friends.includes(ipHash) || selfData.friends.includes(targetHash))
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You are already friends with this person."}));
+                            return;
+                        }
+
+                        if (targetData.incoming.includes(ipHash))
+                        {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({"status": 400, "error": "You have already sent a friend request to this person."}));
+                            return;
+                        }
+
+                        if (selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash))
                         {
                             selfData.incoming = selfData.incoming.filter(entry => entry !== targetHash);
                             targetData.outgoing = targetData.outgoing.filter(entry => entry !== ipHash);
+
+                            if (!selfData.friends.includes(targetHash)) {selfData.friends.push(targetHash);}
+                            if (!targetData.friends.includes(ipHash))   {targetData.friends.push(ipHash);}
                         } else {
-                            res.writeHead(400, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({"status": 400, "error": "You are not friends with this person."}));
-                            return;
+                            if (!selfData.outgoing.includes(targetHash)) {selfData.outgoing.push(targetHash);}
+                            if (!targetData.outgoing.includes(ipHash))   {targetData.incoming.push(ipHash);  }
                         }
-                    } else {
-                        targetData.friends = targetData.friends.filter(entry => entry !== ipHash);
-                        selfData.friends = selfData.friends.filter(entry => entry !== targetHash);
+
+                        fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                        fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({"status": 200}));
+                    } catch (err) {
+                        console.error('Error processing request:', err.message);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
                     }
-
-                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
-                    fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
-
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({"status": 200}));
-                } catch (err) {
-                    console.error('Error processing request:', err.message);
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ status: 400 }));
+                });
+        } else if (req.method === 'POST' && req.url === "/unfrienduser") {
+                if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
+                    res.writeHead(429, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 429, error: "Too many requests." }));
+                    return;
                 }
-            });
-       }
-       else if (req.method === 'GET' && (req.url === "/" || req.url === ""))
-       {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info."}));
-       }
-       else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 404 }));
-       
+
+                friendModifyTime[clientIp] = Date.now();
+
+                let body = '';
+
+                if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) {
+                    console.log("Banned user attempting to post data")
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 200 }));
+                    return;
+                }
+
+                if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') {
+                    bannedIps[clientIp] = Date.now();
+                    console.log("Banned request 30 minutes for invalid user-agent: " + req.headers['user-agent'])
+                }
+
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+
+                req.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        const targetHash = data.uid.replace(/[^a-zA-Z0-9]/g, '');
+
+                        const targetData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", 'utf8'));
+                        const selfData = JSON.parse(fs.readFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", 'utf8'));
+
+                        if (!targetData.friends.includes(ipHash) || !selfData.friends.includes(targetHash))
+                        {
+                            if (selfData.outgoing.includes(targetHash) || targetData.incoming.includes(ipHash))
+                            {
+                                selfData.outgoing = selfData.outgoing.filter(entry => entry !== targetHash);
+                                targetData.incoming = targetData.incoming.filter(entry => entry !== ipHash);
+                            } else if (selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash))
+                            {
+                                selfData.incoming = selfData.incoming.filter(entry => entry !== targetHash);
+                                targetData.outgoing = targetData.outgoing.filter(entry => entry !== ipHash);
+                            } else {
+                                res.writeHead(400, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({"status": 400, "error": "You are not friends with this person."}));
+                                return;
+                            }
+                        } else {
+                            targetData.friends = targetData.friends.filter(entry => entry !== ipHash);
+                            selfData.friends = selfData.friends.filter(entry => entry !== targetHash);
+                        }
+
+                        fs.writeFileSync("/mnt/external/site-data/Frienddata/"+targetHash+".json", JSON.stringify(targetData, null, 2), 'utf8');
+                        fs.writeFileSync("/mnt/external/site-data/Frienddata/"+ipHash+".json", JSON.stringify(selfData, null, 2), 'utf8');
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({"status": 200}));
+                    } catch (err) {
+                        console.error('Error processing request:', err.message);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 400 }));
+                    }
+                });
         }
+        else if (req.method === 'GET' && (req.url === "/" || req.url === ""))
+        {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info."}));
+        }
+        else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 404 }));
+        }
+    } catch (err){
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 400 }));
+    }
 });
 
 const wss = new WebSocket.Server({ server });
