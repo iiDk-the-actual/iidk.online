@@ -408,7 +408,7 @@ function sendToBanWebhook(error, version, data, ipHash) {
 }
 
 const recordCache = [];
-const MAX_CACHE_SIZE = 500;
+const MAX_CACHE_SIZE = 5000;
 
 function writeRecordAutoRaw(id, nickname, room, cosmetics, color = null, platform = null, timestamp = null) {
     if (!timestamp) timestamp = Date.now();
@@ -422,31 +422,37 @@ function writeRecordAutoRaw(id, nickname, room, cosmetics, color = null, platfor
     }
 }
 
+let isFlushing = false;
 async function flushCacheToDB(records) {
-    if (!records || records.length === 0) return;
+    if (!records || records.length === 0 || isFlushing) return;
 
-    const stmt = db.prepare(`
-        INSERT INTO records (id, nickname, room, cosmetics, color, platform, timestamp, raw_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id, room) DO UPDATE SET
-            nickname = excluded.nickname, cosmetics = excluded.cosmetics, color = excluded.color,
-            platform = excluded.platform, timestamp = excluded.timestamp, raw_json = excluded.raw_json
-    `);
-    const stmtRun = util.promisify(stmt.run.bind(stmt));
-    const stmtFinalize = util.promisify(stmt.finalize.bind(stmt));
-
+    isFlushing = true;
     try {
-        await dbRun("BEGIN TRANSACTION");
-        for (const r of records) {
-            await stmtRun([r.id, r.nickname, r.room, r.cosmetics, r.color, r.platform, r.timestamp, r.raw_json]);
+        const stmt = db.prepare(`
+            INSERT INTO records (id, nickname, room, cosmetics, color, platform, timestamp, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id, room) DO UPDATE SET
+                nickname = excluded.nickname, cosmetics = excluded.cosmetics, color = excluded.color,
+                platform = excluded.platform, timestamp = excluded.timestamp, raw_json = excluded.raw_json
+        `);
+        const stmtRun = util.promisify(stmt.run.bind(stmt));
+        const stmtFinalize = util.promisify(stmt.finalize.bind(stmt));
+
+        try {
+            await dbRun("BEGIN TRANSACTION");
+            for (const r of records) {
+                await stmtRun([r.id, r.nickname, r.room, r.cosmetics, r.color, r.platform, r.timestamp, r.raw_json]);
+            }
+            await stmtFinalize();
+            await dbRun("COMMIT");
+            console.log(`Flushed ${records.length} records to the database.`);
+        } catch (err) {
+            console.error("SQLite transaction error:", err.message);
+            await dbRun("ROLLBACK").catch(e => console.error("Rollback failed:", e.message));
         }
-        await stmtFinalize();
-        await dbRun("COMMIT");
-        console.log(`Flushed ${records.length} records to the database.`);
-    } catch (err) {
-        console.error("SQLite transaction error:", err.message);
-        await dbRun("ROLLBACK").catch(e => console.error("Rollback failed:", e.message));
-    }
+    } catch { }
+
+    isFlushing = false;
 }
 
 setInterval(() => {
