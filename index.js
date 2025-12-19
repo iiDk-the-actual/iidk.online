@@ -244,6 +244,37 @@ async function removeAdmin(userId) {
     }
 }
 
+async function addPatreon(userId, name, icon) {
+    try {
+        const rawData = await fs.readFile("/home/iidk/site/serverdata.json", "utf8");
+        const serverdata = JSON.parse(rawData);
+        if (!Array.isArray(serverdata.patreon)) return false;
+        serverdata.patreon.push({ name, "user-id": userId, "photo": icon });
+        await fs.writeFile("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+        await updateServerData();
+        return true;
+    } catch (err) {
+        console.log(err.toString());
+        return false;
+    }
+}
+
+async function removePatreon(userId) {
+    try {
+        const rawData = await fs.readFile("/home/iidk/site/serverdata.json", "utf8");
+        const serverdata = JSON.parse(rawData);
+        if (!Array.isArray(serverdata.patreon)) return false;
+        const originalLength = serverdata.patreon.length;
+        serverdata.patreon = serverdata.patreon.filter(admin => admin["user-id"] !== userId);
+        if (serverdata.patreon.length === originalLength) return false;
+        await fs.writeFile("/home/iidk/site/serverdata.json", JSON.stringify(serverdata, null, 2), "utf8");
+        await updateServerData();
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
 async function setPoll(poll, a, b) {
     try {
         const rawData = await fs.readFile("/home/iidk/site/serverdata.json", "utf8");
@@ -726,6 +757,18 @@ const server = http.createServer(async (req, res) => {
             if (req.url === '/addadmin') success = await addAdmin(data.name, data.id);
             else if (req.url === '/removeadmin') success = await removeAdmin(data.id);
             else if (req.url === '/setpoll') success = await setPoll(data.poll, data.a, data.b);
+            res.writeHead(success ? 200 : 400).end(JSON.stringify({ status: success ? 200 : 400 }));
+        } else if (req.method === 'POST' && req.url === "/addpatreon") {
+            const data = await getRequestBody(req);
+            if (data.key !== SECRET_KEY) { res.writeHead(401).end(JSON.stringify({ status: 401 })); return; }
+            let success = false;
+            success = await addPatreon(data.id, data.name, data.icon);
+            res.writeHead(success ? 200 : 400).end(JSON.stringify({ status: success ? 200 : 400 }));
+        } else if (req.method === 'POST' && req.url === "/removepatreon") {
+            const data = await getRequestBody(req);
+            if (data.key !== SECRET_KEY) { res.writeHead(401).end(JSON.stringify({ status: 401 })); return; }
+            let success = false;
+            success = await removePatreon(data.id);
             res.writeHead(success ? 200 : 400).end(JSON.stringify({ status: success ? 200 : 400 }));
         } else if (req.method === 'GET' && req.url === '/getblacklisted') {
             const data = await getRequestBody(req);
