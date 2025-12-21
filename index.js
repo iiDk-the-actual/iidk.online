@@ -790,7 +790,7 @@ const server = http.createServer(async (req, res) => {
             const data = await getRequestBody(req);
             if (data.key !== SECRET_KEY) { res.writeHead(401).end(JSON.stringify({ status: 401 })); return; }
             let success = false;
-            success = await addPatreon(data.id, data.discord, data.name, data.icon);
+            success = await addPatreon(data.id.replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase().slice(0, 32), data.discord, data.name, data.icon);
             res.writeHead(success ? 200 : 400).end(JSON.stringify({ status: success ? 200 : 400 }));
         } else if (req.method === 'POST' && req.url === "/removepatreon") {
             const data = await getRequestBody(req);
