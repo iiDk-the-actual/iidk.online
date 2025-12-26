@@ -1040,7 +1040,7 @@ const server = http.createServer(async (req, res) => {
                     res.writeHead(401, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 401 }));
                     return;
                 }
-                res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, data: await getTokenData() }));
+                res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, data: data.replace(/\n/g, "\\n") }));
                 return;
             }
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, count: await getTokenLength() }));
