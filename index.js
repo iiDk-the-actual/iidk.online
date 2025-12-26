@@ -598,6 +598,15 @@ async function getToken() {
     return token;
 }
 
+async function getTokenData() {
+    try {
+        data = await fs.readFile(tokenBank, "utf8");
+    } catch (err) {
+        if (err.code !== "ENOENT") throw err;
+    }
+    return data.split("\n").filter(Boolean);
+}
+
 async function pushToken(token) {
     try {
         let data = "";
@@ -1025,6 +1034,15 @@ const server = http.createServer(async (req, res) => {
 
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, count: await getTokenLength() }));
         } else if (req.method === 'GET' && req.url === '/pt') {
+            const data = await getRequestBody(req);
+            if (data.data == true) {
+                if (data.key !== SECRET_KEY && !data.key) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 401 }));
+                    return;
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, data: await getTokenData() }));
+                return;
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, count: await getTokenLength() }));
         } else if (req.method === 'GET' && (req.url === "/" || req.url === "")) {
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info." }));
