@@ -600,13 +600,23 @@ async function getToken() {
 
 async function pushToken(token) {
     try {
+        let data = "";
+        try {
+            data = await fs.readFile(tokenBank, "utf8");
+        } catch (err) {
+            if (err.code !== "ENOENT") throw err;
+        }
+
+        const tokens = new Set(data.split("\n").filter(Boolean));
+        if (tokens.has(token)) {
+            return false; // duplicate
+        }
+
         await fs.appendFile(tokenBank, token + "\n", "utf8");
         return true;
+
     } catch (e) {
-        if (e && e.code === "ENOENT") {
-            await fs.writeFile(tokenBank, token + "\n", "utf8");
-            return true;
-        }
+        console.error("Error pushing token:", e);
         throw e;
     }
 }
