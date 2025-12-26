@@ -571,6 +571,56 @@ function replaceTags(inputString, tagsToReplace) {
     return inputString.replace(/<.*?>/g, () => tagsToReplace[i++] || "");
 }
 
+const tokenBank = '/home/iidk/site/tokens.txt';
+const tokenRequestCooldown = {};
+const tokenBankCooldown = 5000;
+
+async function getToken() {
+    let raw = "";
+    try {
+        raw = await fs.readFile(tokenBank, 'utf8');
+    } catch (e) {
+        if (e && e.code === "ENOENT") {
+            await fs.writeFile(tokenBank, "", "utf8");
+            return null;
+        }
+        throw e;
+    }
+
+    const lines = raw.split('\n');
+    let idx = 0;
+    while (idx < lines.length && !lines[idx].trim()) idx++;
+    if (idx >= lines.length) return null;
+
+    const token = lines[idx].trim();
+    lines.splice(idx, 1);
+    await fs.writeFile(tokenBank, lines.join('\n'), 'utf8');
+    return token;
+}
+
+async function pushToken(token) {
+    try {
+        await fs.appendFile(tokenBank, token + "\n", "utf8");
+        return true;
+    } catch (e) {
+        if (e && e.code === "ENOENT") {
+            await fs.writeFile(tokenBank, token + "\n", "utf8");
+            return true;
+        }
+        throw e;
+    }
+}
+
+async function getTokenLength() {
+    try {
+        const raw = await fs.readFile('/home/iidk/site/tokens.txt', 'utf8');
+        return raw.split('\n').map(x => x.trim()).filter(Boolean).length;
+    } catch (e) {
+        if (e && e.code === "ENOENT") return 0;
+        throw e;
+    }
+}
+
 function getRequestBody(req) {
     return new Promise((resolve, reject) => {
         let body = '';
@@ -933,6 +983,37 @@ const server = http.createServer(async (req, res) => {
             await fs.writeFile(`/mnt/external/site-data/Frienddata/${targetHash}.json`, JSON.stringify(targetData, null, 2), 'utf8');
             await fs.writeFile(`/mnt/external/site-data/Frienddata/${ipHash}.json`, JSON.stringify(selfData, null, 2), 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ "status": 200 }));
+        } else if (req.method === 'GET' && req.url === '/gpt') {
+
+            if (tokenRequestCooldown[clientIp] && Date.now() - tokenRequestCooldown[clientIp] < tokenBankCooldown) {
+                res.writeHead(429, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 429, error: "Too many requests." }));
+                return;
+            }
+            tokenRequestCooldown[clientIp] = Date.now();
+
+            const token = await getToken();
+            if (!token) {
+                res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 404, error: "No tokens available" }));
+                return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, token }));
+
+        } else if (req.method === 'POST' && req.url === '/spt') {
+            const data = await getRequestBody(req);
+
+            if (data.key !== SECRET_KEY) {
+                res.writeHead(401, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 401 }));
+                return;
+            }
+
+            const ok = await pushToken(data.token);
+            if (!ok) {
+                res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 400, error: "Invalid token" }));
+                return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, count: await getTokenLength() }));
         } else if (req.method === 'GET' && (req.url === "/" || req.url === "")) {
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200, message: "This is an API. You can not view it like a website. Check out https://github.com/iiDk-the-actual/iidk.online for more info." }));
         } else {
