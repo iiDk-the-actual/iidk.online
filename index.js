@@ -604,7 +604,7 @@ async function getTokenData() {
     } catch (err) {
         if (err.code !== "ENOENT") throw err;
     }
-    return data.split("\n").filter(Boolean);
+    return data;
 }
 
 async function pushToken(token) {
