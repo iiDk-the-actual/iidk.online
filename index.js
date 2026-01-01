@@ -189,7 +189,7 @@ async function cleanAndFormatSyncData(data) {
 
     for (const userId in cleanedData.data) {
         const user = cleanedData.data[userId];
-        writeRecordAutoRaw(userId, user.nickname, user.cosmetics, cleanedData.directory, user.color, user.platform, Date.now());
+        writeRecordAutoRaw(userId, user.nickname, cleanedData.directory, user.cosmetics, user.color, user.platform, Date.now());
 
         try {
             const cosmeticsMap = {
