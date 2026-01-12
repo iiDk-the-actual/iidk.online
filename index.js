@@ -562,6 +562,15 @@ async function countFilesInDirectory(directory) {
     return entries.filter(entry => entry.isFile()).length;
 }
 
+async function fileExists(path) {
+  try {
+    await fs.access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractTags(inputString) {
     return inputString.match(/<.*?>/g) || [];
 }
@@ -659,14 +668,6 @@ const server = http.createServer(async (req, res) => {
     try {
         const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const ipHash = hashIpAddr(clientIp);
-
-        const friendDataFileName = `/mnt/external/site-data/Frienddata/${ipHash}.json`;
-        try {
-            await fs.access(friendDataFileName);
-        } catch {
-            const jsonData = { "private-ip": clientIp, "friends": [], "outgoing": [], "incoming": [] };
-            await fs.writeFile(friendDataFileName, JSON.stringify(jsonData, null, 4), 'utf8');
-        }
 
         console.log(`${ipHash} ${req.method} ${req.url}`);
 
@@ -912,33 +913,39 @@ const server = http.createServer(async (req, res) => {
             if (data.key !== undefined && data.key === SECRET_KEY) {
                 target = data.uid.replace(/[^a-zA-Z0-9]/g, '');
             }
-            const selfFriendData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${target}.json`, 'utf8'));
+            const friendDataFile = `/mnt/external/site-data/Frienddata/${target}.json`
             let returnData = { friends: {}, incoming: {}, outgoing: {} };
-            const allIdsMap = {};
-            const processFriendArray = async (array, type) => {
-                for (const friend of array) {
-                    try {
-                        const friendData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${friend}.json`, 'utf8'));
-                        const ipData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Ipdata/${friendData["private-ip"]}.json`, 'utf8'));
-                        allIdsMap[ipData["userid"]] = { source: type, friend };
-                    } catch (err) {}
+
+            if (await fileExists(friendDataFile)){
+                const selfFriendData = JSON.parse(await fs.readFile(friendDataFile, 'utf8'));
+
+                const allIdsMap = {};
+                const processFriendArray = async (array, type) => {
+                    for (const friend of array) {
+                        try {
+                            const friendData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${friend}.json`, 'utf8'));
+                            const ipData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Ipdata/${friendData["private-ip"]}.json`, 'utf8'));
+                            allIdsMap[ipData["userid"]] = { source: type, friend };
+                        } catch (err) {}
+                    }
+                };
+                await processFriendArray(selfFriendData.friends, "friends");
+                await processFriendArray(selfFriendData.incoming, "incoming");
+                await processFriendArray(selfFriendData.outgoing, "outgoing");
+                const allIds = Object.keys(allIdsMap);
+                if (allIds.length === 0) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(returnData)); return;
                 }
-            };
-            await processFriendArray(selfFriendData.friends, "friends");
-            await processFriendArray(selfFriendData.incoming, "incoming");
-            await processFriendArray(selfFriendData.outgoing, "outgoing");
-            const allIds = Object.keys(allIdsMap);
-            if (allIds.length === 0) {
-                res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(returnData)); return;
+                const results = await getLatestRecordsByIds(allIds);
+                Object.entries(results).forEach(([id, record]) => {
+                    const { source, friend } = allIdsMap[id];
+                    const online = isUserOnline(friend);
+                    if (source === "friends") returnData.friends[friend] = { "online": online, "currentRoom": online ? record?.room ?? "" : "", "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
+                    else if (source === "incoming") returnData.incoming[friend] = { "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
+                    else if (source === "outgoing") returnData.outgoing[friend] = { "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
+                });
             }
-            const results = await getLatestRecordsByIds(allIds);
-            Object.entries(results).forEach(([id, record]) => {
-                const { source, friend } = allIdsMap[id];
-                const online = isUserOnline(friend);
-                if (source === "friends") returnData.friends[friend] = { "online": online, "currentRoom": online ? record?.room ?? "" : "", "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
-                else if (source === "incoming") returnData.incoming[friend] = { "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
-                else if (source === "outgoing") returnData.outgoing[friend] = { "currentName": record?.nickname ?? null, "currentUserID": record?.id ?? null };
-            });
+            
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(returnData));
         } else if (req.method === 'POST' && req.url === "/frienduser") {
             if (friendModifyTime[clientIp] && Date.now() - friendModifyTime[clientIp] < 1000) {
@@ -953,6 +960,14 @@ const server = http.createServer(async (req, res) => {
             const ipData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Ipdata/${clientIp}.json`, 'utf8'));
             const telemData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Telemdata/${ipData["userid"]}.json`, 'utf8'));
             const targetHash = hashIpAddr(targetTelemData["ip"]);
+            if (!await fileExists(`/mnt/external/site-data/Frienddata/${targetHash}.json`)){
+                const jsonData = { "private-ip": targetTelemData["ip"], "friends": [], "outgoing": [], "incoming": [] };
+                await fs.writeFile(`/mnt/external/site-data/Frienddata/${targetHash}.json`, JSON.stringify(jsonData, null, 4), 'utf8');
+            }
+            if (!await fileExists(`/mnt/external/site-data/Frienddata/${ipHash}.json`)){
+                const jsonData = { "private-ip": clientIp, "friends": [], "outgoing": [], "incoming": [] };
+                await fs.writeFile(`/mnt/external/site-data/Frienddata/${ipHash}.json`, JSON.stringify(jsonData, null, 4), 'utf8');
+            }
             const targetData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${targetHash}.json`, 'utf8'));
             const selfData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${ipHash}.json`, 'utf8'));
             const bypassChecks = selfData.incoming.includes(targetHash) || targetData.outgoing.includes(ipHash);
@@ -983,6 +998,9 @@ const server = http.createServer(async (req, res) => {
             friendModifyTime[clientIp] = Date.now();
             if (bannedIps[clientIp] && Date.now() - bannedIps[clientIp] < 1800000) { res.writeHead(200).end(JSON.stringify({ status: 200 })); return; }
             if (req.headers['user-agent'] != 'UnityPlayer/6000.2.9f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)') bannedIps[clientIp] = Date.now();
+            if (!await fileExists(`/mnt/external/site-data/Frienddata/${ipHash}.json`)){
+                res.writeHead(400).end(JSON.stringify({ "status": 400, "error": "You do not have a valid friend file." })); return;
+            }
             const data = await getRequestBody(req);
             const targetHash = data.uid.replace(/[^a-zA-Z0-9]/g, '');
             const targetData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${targetHash}.json`, 'utf8'));
@@ -1092,6 +1110,11 @@ wss.on('connection', (ws, req) => {
             if (!["invite", "reqinvite", "preferences", "theme", "macro", "message"].includes(command)) return;
 
             const targetHash = data.target.replace(/[^a-zA-Z0-9]/g, '');
+
+            if (!await fileExists(`/mnt/external/site-data/Frienddata/${ipHash}.json`)){
+                console.error('User has no friend data'); return;
+            }
+
             const targetData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${targetHash}.json`, 'utf8'));
             const selfData = JSON.parse(await fs.readFile(`/mnt/external/site-data/Frienddata/${ipHash}.json`, 'utf8'));
 
