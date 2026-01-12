@@ -550,6 +550,19 @@ async function getLatestRecordsByIds(ids) {
     }
 }
 
+const ipTelemetryLock = {};
+const telemTimeout = 60 * 60 * 1000; // 1 hour
+
+function canWriteTelemData(ip, userId) {
+    const now = Date.now();
+    const lock = ipTelemetryLock[ip];
+    if (lock && (now - lock.timestamp < telemTimeout) && lock.userId !== userId) {
+        return false;
+    }
+    ipTelemetryLock[ip] = { userId, timestamp: now };
+    return true;
+}
+
 async function writeTelemData(userid, ip, timestamp) {
     const telemData = { ip, timestamp };
     await fs.writeFile(`/mnt/external/site-data/Telemdata/${userid}.json`, JSON.stringify(telemData, null, 4), 'utf8');
@@ -689,10 +702,18 @@ const server = http.createServer(async (req, res) => {
                 consoleVersion: data.consoleVersion ?? "NULL", menuName: data.menuName ?? "NULL",
                 menuVersion: data.menuVersion ?? "NULL"
             });
+            if (cleanedData.userid.length === 0 || cleanedData.userid.length >= 10) {
+                res.writeHead(400).end(JSON.stringify({ status: 400, error: "No" }));
+                return;
+            }
             activeRooms[cleanedData.directory] = {
                 region: cleanedData.region, gameMode: cleanedData.gameMode, playerCount: cleanedData.playerCount,
                 isPrivate: cleanedData.isPrivate, timestamp: Date.now()
             };
+            if (!canWriteTelemData(clientIp, cleanedData.userid)) {
+                res.writeHead(410).end(JSON.stringify({ status: 410 }));
+                return;
+            }
             await writeTelemData(cleanedData.userid, clientIp, Date.now());
             sendToDiscordWebhook(cleanedData);
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200 }));
@@ -712,6 +733,7 @@ const server = http.createServer(async (req, res) => {
             activeUserData[cleanedData.directory] = { region: cleanedData.region, roomdata: cleanedData.data, timestamp: Date.now() };
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200 }));
         } else if (req.method === 'POST' && req.url === '/reportban') {
+            /*
             if (reportBanRequestTimestamps[clientIp] && Date.now() - reportBanRequestTimestamps[clientIp] < 1800000) {
                 res.writeHead(429).end(JSON.stringify({ status: 429 })); return;
             }
@@ -724,7 +746,8 @@ const server = http.createServer(async (req, res) => {
             }
             const { error, version, data } = await getRequestBody(req);
             await processBanData({ error, version, data }, ipHash);
-            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ status: 200 }));
+            */
+            res.writeHead(501).end(JSON.stringify({ status: 501 }));
         } else if (req.method === 'GET' && req.url === '/usercount') {
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ users: clients.size }));
         } else if (req.method === 'GET' && req.url === '/telemcount') {
