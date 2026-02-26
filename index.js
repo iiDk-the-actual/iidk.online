@@ -12,10 +12,10 @@ const server = http.createServer(async (req, res) => {
                 "discord-invite": "https://discord.gg/iidk",
                 "motd": `This menu has been discontinued. It will no longer be receiving updates, please switch to Seralyth or another LTS fork. Thank you for 2 years of service, I had fun, and I wish even the ones who hated me the best lives.  ~ crimsoncauldron
 
-                Version: {0}
-                Current status: <b>Deprecated</b>
-                Made with <3 by iiDk, kingofnetflix, and others
-                <alpha=128>{2} {0} {3}<alpha=255>`,
+Version: {0}
+Current status: <b>Deprecated</b>
+Made with <3 by iiDk, kingofnetflix, and others
+<alpha=128>{2} {0} {3}<alpha=255>`,
                 "admins": [],
                 "super-admins": [],
                 "patreon": [],
