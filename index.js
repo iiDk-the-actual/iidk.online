@@ -10,7 +10,7 @@ const server = http.createServer(async (req, res) => {
   "min-version": "0.0.0",
   "min-console-version": "0.0.0",
   "discord-invite": "https://discord.gg/iidk",
-  "motd": "This menu has been discontinued. It will no longer be receiving updates. Thank you for 2 years of service, I had fun, and I wish even the ones who hated me the best lives.  ~ crimsoncauldron\n\nFine! What's 17 more years? I can always start again. Think, everyone.\nVersion: {0}\nCurrent status: <b>Deprecated</b>\nMade with <3 by iiDk, kingofnetflix, and others\n<alpha=128>{2} {0} {3}<alpha=255>",
+  "motd": `+"\"This menu has been discontinued. It will no longer be receiving updates, please switch to Seralyth or another LTS fork. Thank you for 2 years of service, I had fun, and I wish even the ones who hated me the best lives.  ~ crimsoncauldron\n\nVersion: {0}\nCurrent status: <b>Deprecated</b>\nMade with <3 by iiDk, kingofnetflix, and others\n<alpha=128>{2} {0} {3}<alpha=255>\","+`
   "admins": [
   ],
   "super-admins": [
