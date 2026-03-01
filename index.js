@@ -10,17 +10,15 @@ const server = http.createServer(async (req, res) => {
                 "min-version": "0.0.0",
                 "min-console-version": "0.0.0",
                 "discord-invite": "https://discord.gg/iidk",
-                "motd": `This menu has been discontinued. It will no longer be receiving updates, please switch to Seralyth or another LTS fork. Thank you for 2 years of service, I had fun, and I wish even the ones who hated me the best lives.  ~ crimsoncauldron
+                "motd": `This menu has been discontinued. It will no longer be receiving updates, please switch to a community instance at crimsoncauldron.dev/instances.
 
-Version: {0}
-Current status: <b>Deprecated</b>
-Made with <3 by iiDk, kingofnetflix, and others
+Thank you for 2 years of service, I had fun, and I wish even the ones who hated me the best lives.  ~ crimsoncauldron
 <alpha=128>{2} {0} {3}<alpha=255>`,
                 "admins": [],
                 "super-admins": [],
                 "patreon": [],
                 "detected-mods": [],
-                "poll": "The menu has been discontinued. Please switch menus soon, as ii's Stupid Menu will stop functioning.",
+                "poll": "The menu has been discontinued. Please switch to a community instance at crimsoncauldron.dev/instances.",
                 "option-a": "<3",
                 "option-b": "Luv yall"
             };
